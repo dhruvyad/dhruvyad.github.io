@@ -94,6 +94,157 @@ export function mhaBytesPerToken(bytesPerElem = 2) {
   return 2 * G.heads * G.vHeadDim * bytesPerElem * G.layers
 }
 
+/**
+ * Per-layer structure, straight from config.json's `mlp_layer_types` and
+ * `indexer_types` arrays: the first 3 layers are dense, the remaining 75 are MoE,
+ * and only 21 of the 78 own an indexer (layers 0-2, then every fourth from 6).
+ * A 22nd indexer lives on the MTP layer.
+ */
+export const LAYER_MAP = Array.from({ length: G.layers }, (_, i) => ({
+  index: i,
+  dense: i < G.denseLayers,
+  fullIndexer: i < 3 || (i >= 6 && (i - 6) % 4 === 0),
+}))
+
+const mtpParams = attnParams + G.experts * expertParams + expertParams + routerParams + G.hidden ** 2
+
+/**
+ * Cost of each structural piece of the model, so a diagram can attach real
+ * numbers to the thing you click on.
+ *
+ * `active` is what a single token actually touches — the whole point of a sparse
+ * MoE is that this is a small fraction of `params`.
+ */
+export function partBreakdown({ wBytes = 1, B = 1, S = 8192 } = {}) {
+  const selected = Math.min(S, G.indexTopk)
+  const touched = expertsTouched(B)
+  const attnScoreFlops = 2 * G.heads * (G.qkHeadDim + G.vHeadDim) * selected
+  const indexScoreFlops = 2 * G.indexHeads * G.indexHeadDim * S
+
+  const parts = [
+    {
+      id: 'embed',
+      label: 'Token embedding',
+      count: 1,
+      detail: `${G.vocab.toLocaleString()} × ${G.hidden}`,
+      params: G.vocab * G.hidden,
+      // A token touches exactly one row of the table, not the table.
+      active: G.hidden,
+      flops: 0,
+      bytes: B * G.hidden * wBytes,
+      note: 'A lookup, not a matrix multiply. It holds a lot of parameters but costs almost no arithmetic and almost no bandwidth — only the rows for the tokens in flight get read.',
+    },
+    {
+      id: 'indexer',
+      label: 'DSA indexer',
+      count: G.indexerLayers,
+      detail: '22 of 79 layers',
+      params: G.indexerLayers * indexerParams,
+      active: G.indexerLayers * indexerParams,
+      flops: G.indexerLayers * (2 * indexerParams + indexScoreFlops),
+      bytes: G.indexerLayers * indexerParams * wBytes,
+      note: 'Picks the top-2048 keys each query will attend to. Tiny in parameters but its scoring pass is O(S) per query per layer, which is why sharing one indexer across four layers matters at long context.',
+    },
+    {
+      id: 'mla',
+      label: 'MLA attention',
+      count: G.layers,
+      detail: `${G.heads} heads, 512-dim latent`,
+      params: G.layers * attnParams,
+      active: G.layers * attnParams,
+      flops: G.layers * (2 * attnParams + attnScoreFlops),
+      bytes: G.layers * attnParams * wBytes,
+      note: `Every token uses all of it. Also the piece that owns the KV cache: ${(kvBytesPerToken() / 1024).toFixed(2)} KiB per token, compressed to one latent per layer instead of keys and values per head.`,
+    },
+    {
+      id: 'dense',
+      label: 'Dense MLP',
+      count: G.denseLayers,
+      detail: 'layers 0–2 only',
+      params: G.denseLayers * denseMlpParams,
+      active: G.denseLayers * denseMlpParams,
+      flops: G.denseLayers * 2 * denseMlpParams,
+      bytes: G.denseLayers * denseMlpParams * wBytes,
+      note: 'The first three layers are ordinary feed-forward blocks. Routing very early in the network tends to hurt, so those layers stay dense.',
+    },
+    {
+      id: 'router',
+      label: 'Router',
+      count: sparseLayers,
+      detail: `${G.hidden} → ${G.experts} scores`,
+      params: sparseLayers * routerParams,
+      active: sparseLayers * routerParams,
+      flops: sparseLayers * 2 * routerParams,
+      bytes: sparseLayers * routerParams * wBytes,
+      note: 'Scores all 256 experts and keeps the top 8. Negligible in cost, but it decides which 9.7B of expert weights get read — so it sets the bandwidth bill for the whole layer.',
+    },
+    {
+      id: 'shared',
+      label: 'Shared expert',
+      count: sparseLayers,
+      detail: '1 per MoE layer, always on',
+      params: sparseLayers * expertParams,
+      active: sparseLayers * expertParams,
+      flops: sparseLayers * 2 * expertParams,
+      bytes: sparseLayers * expertParams * wBytes,
+      note: 'Runs for every token regardless of routing, so the routed experts only have to learn what is special about a token rather than what is common to all of them.',
+    },
+    {
+      id: 'routed',
+      label: 'Routed experts',
+      count: sparseLayers * G.experts,
+      detail: `top-${G.topk} of ${G.experts}, × ${sparseLayers} layers`,
+      params: sparseLayers * G.experts * expertParams,
+      active: sparseLayers * G.topk * expertParams,
+      flops: sparseLayers * 2 * G.topk * expertParams,
+      bytes: sparseLayers * touched * expertParams * wBytes,
+      note: `Where the model lives: 96% of all parameters. One token activates 8 of 256 per layer, but a batch of ${B} collectively touches ${touched.toFixed(0)} — and every one of those has to be read from HBM.`,
+    },
+    {
+      id: 'mtp',
+      label: 'MTP head',
+      count: 1,
+      detail: 'one extra layer',
+      params: mtpParams,
+      active: 0,
+      flops: 0,
+      bytes: 0,
+      note: 'A spare transformer layer that predicts the token after next, used to draft candidates for speculative decoding. Idle unless speculation is switched on, which is why it costs nothing here.',
+    },
+    {
+      id: 'lmhead',
+      label: 'LM head',
+      count: 1,
+      detail: `${G.hidden} → ${G.vocab.toLocaleString()}`,
+      params: G.vocab * G.hidden,
+      active: G.vocab * G.hidden,
+      flops: 2 * G.vocab * G.hidden,
+      bytes: G.vocab * G.hidden * wBytes,
+      note: 'Projects the final hidden state onto the vocabulary. Unlike the embedding this is a real matrix multiply, and its weights are streamed in full on every step.',
+    },
+  ]
+
+  const totalParams = parts.reduce((a, p) => a + p.params, 0)
+  const totalActive = parts.reduce((a, p) => a + p.active, 0)
+  const totalFlops = parts.reduce((a, p) => a + p.flops, 0)
+  const totalBytes = parts.reduce((a, p) => a + p.bytes, 0)
+
+  return {
+    parts: parts.map((p) => ({
+      ...p,
+      paramShare: p.params / totalParams,
+      activeShare: p.active / p.params,
+      flopShare: totalFlops ? p.flops / totalFlops : 0,
+      byteShare: totalBytes ? p.bytes / totalBytes : 0,
+    })),
+    totalParams,
+    totalActive,
+    totalFlops,
+    totalBytes,
+    touched,
+  }
+}
+
 // ------------------------------------------------------------------- hardware
 export const GPUS = {
   'H100 SXM': { hbmGB: 80, bw: 3.35e12, bf16: 989e12 },

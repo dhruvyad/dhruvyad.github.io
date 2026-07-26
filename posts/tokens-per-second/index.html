@@ -80,11 +80,11 @@
 
       <p>
         This article derives that number from first principles. Rather than reason about a
-        hypothetical model, I use <b>GLM-5.2</b>, Zhipu AI's 753B-parameter open-weights
+        hypothetical model, I use <b>GLM-5.2</b>, <a href="https://z.ai">Zhipu AI</a>'s 753B-parameter open-weights
         model<d-cite key="glm5"></d-cite> — every architectural constant below comes from its
-        published <code>config.json</code>, and the parameter accounting is checked against the
+        published <a href="https://huggingface.co/zai-org/GLM-5.2/blob/main/config.json"><code>config.json</code></a>, and the parameter accounting is checked against the
         actual size of its weight files.<d-footnote>
-          The 282 safetensors shards total 1,506,667,387,408 bytes. At two bytes per bf16 parameter
+          The 282 safetensors shards (<a href="https://huggingface.co/zai-org/GLM-5.2/tree/main">file listing</a>) total 1,506,667,387,408 bytes. At two bytes per bf16 parameter
           that is 753.33B parameters, and the analytic budget in the table below reproduces it to
           within 0.006% — the residual is layernorm and bias vectors I did not bother counting.
         </d-footnote>
@@ -162,32 +162,38 @@
         (DSA) with a cross-layer-shared indexer.
       </p>
 
-      <figure class="spec-table">
-        <table>
-          <tr><td>Total parameters</td><td>753.3B</td><td>1403 GiB in bf16</td></tr>
-          <tr><td>Active per token</td><td>40.3B</td><td>5.4% of the model</td></tr>
-          <tr><td>Layers</td><td>78</td><td>3 dense, 75 MoE</td></tr>
-          <tr><td>Hidden size</td><td>6144</td><td></td></tr>
-          <tr><td>Experts</td><td>256 routed + 1 shared</td><td>top-8 per token</td></tr>
-          <tr><td>Attention</td><td>MLA, 64 heads</td><td>512-dim latent + 64-dim RoPE</td></tr>
-          <tr><td>Sparse attention</td><td>DSA, top-2048</td><td>22 indexers, not 78</td></tr>
-          <tr><td>Context</td><td>1,048,576</td><td></td></tr>
-          <tr><td>MTP heads</td><td>1</td><td>for speculative decoding</td></tr>
-        </table>
+      <p>
+        Rather than list its hyperparameters, here is the model itself, with the cost of each piece
+        attached. Red is what a single token actually activates; grey is what sits in memory doing
+        nothing for that token. Click any block.
+      </p>
+
+      <d-figure id="architecture">
+        <div id="architecture-target" class="figure-target"></div>
         <figcaption>
-          GLM-5.2 as its weights describe it. The parameters live almost entirely in the MoE blocks:
-          97.9% of the model is expert weights, and the 78 attention blocks are just 13.0B
-          parameters between them.
+          GLM-5.2 as its weights describe it, with every number derived from the published
+          <code>config.json</code>. The proportion of red in each block is the fraction of that
+          block's parameters a token touches — nearly all of them everywhere except the routed
+          experts, which are 96% of the model and 3% used. The grid shows one layer's 256 experts;
+          raise the batch and watch the whole thing light up, which is the subject of the next
+          section.
         </figcaption>
-      </figure>
+      </d-figure>
 
       <p>
-        The ratio in the second row is the reason a 753B model is servable at all. Each token is
-        routed to 8 of 256 experts per layer, so only about 40B parameters participate in producing
-        it. <b>Total parameters determine what you must store; active parameters determine what you
-        must read.</b> Those are different constraints against different hardware limits — capacity
-        versus bandwidth — and conflating them is the most common error in back-of-envelope
-        estimates.
+        The bar at the bottom is the reason a 753B model is servable at all: <b>40.3B parameters, 5.4%
+        of the weights, participate in producing a token.</b> Total parameters determine what you must
+        store; active parameters determine what you must read. Those are different constraints against
+        different hardware limits — capacity versus bandwidth — and conflating them is the most common
+        error in back-of-envelope estimates.
+      </p>
+
+      <p>
+        Two details from that diagram matter later. The <b>embedding table</b> holds 951M parameters
+        but costs essentially nothing to run, because a lookup reads one row rather than a matrix —
+        parameter counts are a poor proxy for cost. And the <b>indexer</b> appears on only 21 of the
+        78 layers, visible as the sparse marks under the layer map; that is a deliberate choice we
+        come back to when sparse attention starts dominating long-context cost.
       </p>
 
       <h2>Counting the bytes</h2>
@@ -507,7 +513,7 @@
       </p>
 
       <p>
-        Published figures for GLM-5.2 on B300 hardware with NVFP4 weights show the shape of the
+        Published figures for GLM-5.2 on B300 hardware with NVFP4 weights, measured with SGLang, show the shape of the
         tradeoff clearly<d-cite key="sglangglm52"></d-cite>:
       </p>
 

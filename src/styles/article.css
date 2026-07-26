@@ -143,6 +143,116 @@ d-article d-figure > .figure-target:empty {
   background: rgba(0, 0, 0, 0.04);
 }
 
+/* Glossary terms and their shared tooltip (src/lib/glossary.js).
+ *
+ * Every mention of a defined term is wrapped automatically, so the marker has to
+ * be quiet enough to survive appearing many times in one paragraph — a dotted
+ * underline only, no colour change.
+ */
+.gl-term {
+  border-bottom: 1px dotted rgba(0, 0, 0, 0.4);
+  cursor: help;
+}
+
+.gl-term:hover,
+.gl-term:focus-visible {
+  border-bottom-color: #c0392b;
+  background: rgba(192, 57, 43, 0.07);
+  outline: none;
+}
+
+/* In headings the dotted rule reads as a rendering fault, so drop it there but
+   keep the term interactive. */
+d-article h1 .gl-term,
+d-article h2 .gl-term,
+d-article h3 .gl-term,
+d-article h4 .gl-term,
+d-title .gl-term {
+  border-bottom: none;
+}
+
+.gl-tip {
+  position: absolute;
+  z-index: 100;
+  width: min(320px, calc(100vw - 24px));
+  padding: 0.75rem 0.85rem;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 4px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.13);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.55em;
+  color: rgba(0, 0, 0, 0.78);
+  opacity: 0;
+  transition: opacity 0.1s ease;
+  pointer-events: none;
+}
+
+.gl-tip.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.gl-tip .gl-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  flex-wrap: wrap;
+  margin-bottom: 0.3em;
+}
+
+.gl-tip .gl-title {
+  font-weight: 600;
+  font-size: 13.5px;
+  color: #000;
+}
+
+.gl-tip .gl-expand {
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.5);
+}
+
+.gl-tip .gl-short {
+  margin: 0;
+}
+
+.gl-tip .gl-body {
+  margin-top: 0.5em;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.gl-tip .gl-visual {
+  margin: 0.6em 0 0.2em;
+}
+
+.gl-tip .gl-visual svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.gl-tip .gl-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25em 0.9em;
+  margin-top: 0.6em;
+  padding-top: 0.5em;
+  border-top: 1px solid rgba(0, 0, 0, 0.09);
+}
+
+.gl-tip .gl-links a {
+  font-size: 11.5px;
+  color: #c0392b;
+  text-decoration: none;
+  border-bottom: none;
+}
+
+.gl-tip .gl-links a:hover {
+  text-decoration: underline;
+}
+
 /* Byline.
  *
  * distill auto-inserts its own <d-byline> with four fixed columns — Authors,
