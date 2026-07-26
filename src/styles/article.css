@@ -335,3 +335,13 @@ d-title .home-link {
 d-title .home-link:hover {
   color: rgba(0, 0, 0, 0.8);
 }
+
+/* A visible marker on work that is knowingly incomplete. */
+d-article p.draft-note {
+  border-left: 3px solid #c0392b;
+  padding: 0.6em 0 0.6em 1em;
+  margin-top: 2em;
+  font-size: 0.95em;
+  color: rgba(0, 0, 0, 0.65);
+  background: rgba(192, 57, 43, 0.035);
+}

@@ -95,9 +95,17 @@ function postsIndex() {
             description: fm.description ?? '',
             published: fm.published ?? null,
             tags: fm.tags ?? [],
+            // Optional explicit position, for pieces that read as a series and
+            // shouldn't be ordered purely by date.
+            order: fm.order ?? null,
           }
         })
-        .sort((a, b) => String(b.published ?? '').localeCompare(String(a.published ?? '')))
+        .sort((a, b) => {
+          if (a.order != null || b.order != null) {
+            return (a.order ?? Infinity) - (b.order ?? Infinity)
+          }
+          return String(b.published ?? '').localeCompare(String(a.published ?? ''))
+        })
       return `export default ${JSON.stringify(posts, null, 2)}`
     },
     configureServer(server) {
