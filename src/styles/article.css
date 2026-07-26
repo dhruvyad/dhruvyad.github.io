@@ -1,0 +1,115 @@
+/*
+ * Shared article styling, layered on top of distill's own stylesheet (which
+ * template.v2.js injects at runtime).
+ *
+ * distill gives you a named grid across every top-level block. Set `grid-column`
+ * on a figure to control its width:
+ *
+ *   text    the prose column (the default for everything in d-article)
+ *   page    a bit wider than the text
+ *   middle  wider still, centred
+ *   screen  full bleed, edge to edge
+ *   gutter  the narrow margin column, for asides
+ *
+ * The helper classes .l-body / .l-page / .l-body-outset / .l-screen / .l-gutter
+ * from distill do the same thing, and work here too.
+ */
+
+/* Figures align with the prose column by default, which reads as deliberate at
+   the widths most diagrams end up. Opt into more room per figure. */
+d-article d-figure {
+  grid-column: text;
+  margin-bottom: 1.5em;
+}
+
+d-article d-figure.wide {
+  grid-column: page;
+}
+
+d-article d-figure.wider {
+  grid-column: middle;
+}
+
+d-article d-figure.full-bleed {
+  grid-column: screen;
+}
+
+/* Centre a figure's contents when its SVG is narrower than the column it sits in. */
+d-article d-figure svg,
+d-article d-figure canvas {
+  display: block;
+  margin: 0 auto;
+}
+
+d-article d-figure figcaption,
+d-article figure figcaption {
+  font-size: 13px;
+  line-height: 1.6em;
+  color: rgba(0, 0, 0, 0.6);
+  margin-top: 0.75em;
+}
+
+/* Give a mounting figure a reserved height so the page doesn't jump when a
+   lazily-mounted visualisation appears. Figures can override with their own
+   min-height. */
+d-article d-figure > .figure-target:empty {
+  min-height: 240px;
+}
+
+/* Controls (sliders, buttons) inside figures — consistent across posts. */
+.figure-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35em 1.25em;
+  margin-bottom: 0.75em;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.figure-controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.figure-controls input[type='range'] {
+  width: 160px;
+  accent-color: #c0392b;
+}
+
+.figure-controls .value {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono, 'SF Mono', Menlo, Consolas, monospace);
+  color: #000;
+  min-width: 3.2em;
+}
+
+.figure-controls button {
+  font: inherit;
+  padding: 0.2em 0.7em;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.figure-controls button:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* A back-link to the index, sitting in d-title. */
+d-title .home-link {
+  display: inline-block;
+  margin-bottom: 1.5rem;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(0, 0, 0, 0.5);
+  text-decoration: none;
+  border-bottom: none;
+}
+
+d-title .home-link:hover {
+  color: rgba(0, 0, 0, 0.8);
+}

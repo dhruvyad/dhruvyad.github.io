@@ -1,0 +1,26 @@
+{
+  "name": "notes",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A personal distill.pub — interactive explainers for learning in public",
+  "scripts": {
+    "predev": "node scripts/copy-katex.mjs",
+    "dev": "vite",
+    "prebuild": "node scripts/copy-katex.mjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "smoke": "node scripts/smoke.mjs",
+    "new-post": "node scripts/new-post.mjs",
+    "vendor-distill": "node scripts/vendor-distill.mjs"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.2.0",
+    "svelte": "^5.56.8",
+    "vite": "^8.1.5"
+  },
+  "dependencies": {
+    "d3": "^7.9.0",
+    "katex": "^0.18.1"
+  }
+}

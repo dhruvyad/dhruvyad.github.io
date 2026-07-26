@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Softmax, Slowly — Notes</title>
+
+    <!-- distill's web components, vendored locally (see scripts/vendor-distill.mjs) -->
+    <script src="/vendor/template.v2.js"></script>
+    <!-- KaTeX stylesheet at document level so its @font-face rules register;
+         d-math also loads it inside its shadow root for the math itself. -->
+    <link rel="stylesheet" href="/vendor/katex/katex.min.css" />
+    <link rel="stylesheet" href="/src/styles/article.css" />
+  </head>
+
+  <body>
+    <d-front-matter>
+      <script type="text/json">
+        {
+          "title": "Softmax, Slowly",
+          "description": "Temperature, shift-invariance, and the one derivative worth memorising.",
+          "published": "2026-07-26",
+          "tags": ["fundamentals", "probability"],
+          "authors": [
+            {
+              "author": "Dhruv Yadav",
+              "authorURL": "https://github.com/dhruvyad"
+            }
+          ],
+          "katex": {
+            "delimiters": [
+              { "left": "$", "right": "$", "display": false },
+              { "left": "$$", "right": "$$", "display": true }
+            ]
+          }
+        }
+      </script>
+    </d-front-matter>
+
+    <d-title>
+      <a class="home-link" href="../../">← Notes</a>
+      <h1>Softmax, Slowly</h1>
+      <p>
+        Everyone can write down the softmax formula. Fewer people can say what its temperature
+        parameter is really doing, or why the function is unchanged when you add seven to every
+        input. Both facts fall out of the same observation.
+      </p>
+    </d-title>
+
+    <d-article>
+      <p>
+        Softmax turns a vector of real numbers into a probability distribution. For logits
+        $z_1, \dots, z_K$ the probability it assigns to class $i$ is
+      </p>
+
+      <d-math block>
+        p_i = \frac{e^{z_i}}{\sum_{j=1}^{K} e^{z_j}}.
+      </d-math>
+
+      <p>
+        The name is a little unfortunate. It is not a soft version of the $\max$ function — that
+        would return a number near the largest input. It is a soft version of $\arg\max$: a
+        smoothed one-hot indicator of <em>which</em> input is largest.<d-footnote>
+          The function that actually smooths $\max$ is the log-sum-exp,
+          $\operatorname{lse}(z) = \log \sum_j e^{z_j}$, and the two are related: softmax is exactly
+          the gradient of log-sum-exp. If you have ever wondered why those two show up together so
+          often, that is why.
+        </d-footnote>
+        It arrived in machine learning via Bridle, who noticed that a network trained with this
+        output layer could be read as estimating posterior class
+        probabilities<d-cite key="bridle1990probabilistic"></d-cite>.
+      </p>
+
+      <h2>Temperature</h2>
+
+      <p>
+        The usual generalisation divides the logits by a positive constant $T$ before
+        exponentiating:
+      </p>
+
+      <d-math block>
+        p_i(T) = \frac{e^{z_i / T}}{\sum_{j} e^{z_j / T}}.
+      </d-math>
+
+      <p>
+        Because dividing by $T$ scales the <em>gaps</em> between logits, $T$ controls how much a
+        given gap matters. Two logits separated by $1.0$ are separated by $10$ at $T = 0.1$ and by
+        $0.125$ at $T = 8$. Drag the slider and watch the distribution slide between its two limits.
+      </p>
+
+      <d-figure id="temperature-bars">
+        <div id="temperature-bars-target" class="figure-target"></div>
+        <figcaption>
+          Softmax over five logits as temperature varies. As $T \to 0$ the distribution collapses
+          onto the largest logit; as $T \to \infty$ it flattens toward uniform. The bar underneath
+          tracks entropy, which is a cleaner summary of "how undecided is this" than any single
+          probability.
+        </figcaption>
+      </d-figure>
+
+      <p>The two limits are worth stating precisely:</p>
+
+      <ul>
+        <li>
+          <b>$T \to 0^+$.</b> The largest logit's share tends to $1$ and everything else tends to
+          $0$ — hard $\arg\max$. Sampling at very low temperature is therefore nearly
+          deterministic.
+        </li>
+        <li>
+          <b>$T \to \infty$.</b> All the scaled logits approach $0$, so every $e^{z_i/T} \to 1$ and
+          $p_i \to 1/K$ — the uniform distribution, which ignores the logits entirely.
+        </li>
+      </ul>
+
+      <p>
+        This one knob gets reused in a few different places, which is worth noticing because the
+        <em>intent</em> differs each time. In knowledge distillation, a high temperature is applied
+        deliberately to expose the small probabilities a teacher network assigns to wrong classes —
+        the "dark knowledge" that a hard $\arg\max$ throws
+        away<d-cite key="hinton2015distilling"></d-cite>. In calibration, a single $T$ is fit on a
+        validation set after training to fix the fact that modern networks are systematically
+        overconfident<d-cite key="guo2017calibration"></d-cite>. In text generation it is a sampling
+        control, where the failure modes at both extremes — degenerate repetition when too low,
+        incoherence when too high — motivated truncated sampling schemes
+        instead<d-cite key="holtzman2020curious"></d-cite>.
+      </p>
+
+      <h2>Shift-invariance</h2>
+
+      <p>
+        Add the same constant $c$ to every logit and nothing happens. The proof is one line: the
+        factor $e^{c}$ appears in the numerator and in every term of the denominator, so it cancels.
+      </p>
+
+      <d-math block>
+        \frac{e^{z_i + c}}{\sum_j e^{z_j + c}} = \frac{e^{c} e^{z_i}}{e^{c} \sum_j e^{z_j}} =
+        \frac{e^{z_i}}{\sum_j e^{z_j}}
+      </d-math>
+
+      <p>
+        So logits are only meaningful up to a shift — softmax reads differences, not values. The
+        figure below computes the probabilities from the shifted logits every frame, so you can
+        watch the invariance hold rather than take my word for it.
+      </p>
+
+      <d-figure id="shift-invariance">
+        <div id="shift-invariance-target" class="figure-target"></div>
+        <figcaption>
+          Drag any dot to change a single logit and the probabilities respond. Move the shift slider
+          and all four logits translate together while the probabilities stay exactly put. Softmax
+          is a function of the differences between logits only.
+        </figcaption>
+      </d-figure>
+
+      <p>
+        This is not just a curiosity; it is the reason softmax can be computed at all. Written
+        naively, $e^{z_i}$ overflows a float64 somewhere around $z_i = 710$. Since we are free to
+        shift, every real implementation subtracts the maximum first:
+      </p>
+
+      <d-code block language="python">
+        def softmax(z, T=1.0):
+            z = z / T
+            z = z - z.max()      # free, by shift-invariance
+            e = np.exp(z)        # largest term is now exp(0) = 1
+            return e / e.sum()
+      </d-code>
+
+      <p>
+        After the subtraction the largest exponent is exactly $e^0 = 1$, so overflow is impossible.
+        Underflow is still possible for very negative entries, but those round to $0$, which is the
+        right answer anyway.<d-footnote>
+          The same trick is why you should reach for a fused <code>log_softmax</code> rather than
+          composing <code>log(softmax(z))</code>. The fused version computes
+          $z_i - \operatorname{lse}(z)$ directly and stays accurate even when $p_i$ is far too small
+          to represent.
+        </d-footnote>
+      </p>
+
+      <h2>The derivative</h2>
+
+      <p>
+        One more thing worth having memorised, because it shows up in every backward pass. The
+        Jacobian of softmax is
+      </p>
+
+      <d-math block>
+        \frac{\partial p_i}{\partial z_j} = p_i (\delta_{ij} - p_j),
+      </d-math>
+
+      <p>
+        where $\delta_{ij}$ is $1$ when $i = j$ and $0$ otherwise. Two consequences read straight
+        off it. The diagonal terms $p_i(1 - p_i)$ vanish whenever $p_i$ is near $0$ or near $1$ —
+        a saturated softmax has almost no gradient, which is exactly the vanishing-gradient story
+        told about sigmoids. And the off-diagonal terms $-p_i p_j$ are negative: probability is
+        conserved, so pushing one class up necessarily pushes the others down.
+      </p>
+
+      <p>
+        The saturation problem is also why cross-entropy is the loss of choice rather than, say,
+        squared error on the probabilities. Composing softmax with cross-entropy collapses to a
+        gradient of $p - y$ — the raw prediction error, with the troublesome $p_i(1 - p_i)$ factor
+        cancelled out<d-cite key="goodfellow2016deep"></d-cite>. The two functions are designed to
+        be used together, and taking their gradients separately throws that away.
+      </p>
+
+      <h2>What to remember</h2>
+
+      <p>
+        Softmax reads differences between logits, not logits. Temperature rescales those differences
+        — small $T$ magnifies them toward $\arg\max$, large $T$ erases them toward uniform. The
+        freedom to shift is what makes the computation numerically safe, and the Jacobian
+        $p_i(\delta_{ij} - p_j)$ explains both why saturated outputs stop learning and why
+        cross-entropy is its natural partner.
+      </p>
+    </d-article>
+
+    <d-appendix>
+      <!-- Both components render their own "Footnotes" / "References" heading. -->
+      <d-footnote-list></d-footnote-list>
+      <d-citation-list></d-citation-list>
+    </d-appendix>
+
+    <d-bibliography src="bibliography.bib"></d-bibliography>
+
+    <script type="module" src="./index.js"></script>
+  </body>
+</html>

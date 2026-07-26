@@ -1,0 +1,65 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it — a half-deployed Pages
+# site is worse than a slightly stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      # The build succeeding proves very little: distill's components render into
+      # shadow DOM at runtime, so broken math or an unresolved citation still
+      # produces a valid-looking page. This loads each page in headless Chrome
+      # and checks what actually rendered. A failure here blocks the deploy.
+      - name: Smoke test the build
+        run: |
+          npx vite preview --port 4173 &
+          server=$!
+          trap 'kill $server 2>/dev/null || true' EXIT
+          up=0
+          for _ in $(seq 1 40); do
+            if curl -sf http://localhost:4173/notes/ >/dev/null; then up=1; break; fi
+            sleep 0.5
+          done
+          if [ "$up" -ne 1 ]; then echo "preview server never came up" >&2; exit 1; fi
+          npm run smoke
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

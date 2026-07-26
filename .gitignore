@@ -1,0 +1,9 @@
+node_modules/
+dist/
+
+# Copied from the katex npm package on predev/prebuild — see scripts/copy-katex.mjs.
+# The vendored distill template next to it IS committed, deliberately.
+public/vendor/katex/
+
+.DS_Store
+*.log
