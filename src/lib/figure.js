@@ -42,6 +42,29 @@ export function mountFigure(id, Component, props = {}) {
 }
 
 /**
+ * Like mountFigure, but takes a `() => import('./Heavy.svelte')` thunk and only
+ * downloads the module once the figure nears the viewport.
+ *
+ * Worth it for figures with a big dependency — the 3D view pulls in three.js,
+ * ~157 kB gzipped, which no reader should pay for before scrolling to it.
+ */
+export function mountFigureLazy(id, loader, props = {}) {
+  const figure = requireFigure(id)
+  return new Promise((resolve, reject) => {
+    figure.addEventListener('ready', async () => {
+      try {
+        const mod = await loader()
+        const target = figure.querySelector(`#${id}-target`) ?? figure
+        resolve(svelteMount(mod.default, { target, props }))
+      } catch (err) {
+        console.error(`Figure "${id}" failed to load:`, err)
+        reject(err)
+      }
+    })
+  })
+}
+
+/**
  * Same as mountFigure, but unmounts when the figure scrolls away and remounts
  * when it returns. For figures running a requestAnimationFrame loop that you
  * don't want burning cycles off-screen and don't need to preserve state for.

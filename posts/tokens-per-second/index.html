@@ -163,37 +163,46 @@
       </p>
 
       <p>
-        Rather than list its hyperparameters, here is the model itself, with the cost of each piece
-        attached. Red is what a single token actually activates; grey is what sits in memory doing
-        nothing for that token. Click any block.
+        Rather than list its hyperparameters, here is the model itself. Each box is a real weight
+        matrix, sized by its actual dimensions and positioned where it sits in the network — 78
+        layers running left to right, each with its attention projections above and its 256 experts
+        arranged as a panel. Red is what a single token activates; grey is what sits in memory doing
+        nothing for that token. Drag to orbit, scroll to zoom, click anything for its dimensions.
       </p>
 
       <d-figure id="architecture">
         <div id="architecture-target" class="figure-target"></div>
         <figcaption>
-          GLM-5.2 as its weights describe it, with every number derived from the published
-          <code>config.json</code>. The proportion of red in each block is the fraction of that
-          block's parameters a token touches — nearly all of them everywhere except the routed
-          experts, which are 96% of the model and 3% used. The grid shows one layer's 256 experts;
-          raise the batch and watch the whole thing light up, which is the subject of the next
-          section.
+          GLM-5.2, laid out from its published <code>config.json</code> — 19,767 weight blocks, every
+          dimension read from the file rather than drawn by hand. Switch to <b>Role</b> to see what
+          each part is: the low-rank MLA projections, the 21 sparse-attention indexers, the three
+          dense MLPs at the front, the expert panels everywhere after. In <b>Activation</b> the
+          sparsity is the whole picture — 8 of 256 experts lit per layer at batch 1. Raise the batch
+          and the panels fill in, which is the subject of the next section.
         </figcaption>
       </d-figure>
 
       <p>
-        The bar at the bottom is the reason a 753B model is servable at all: <b>40.3B parameters, 5.4%
-        of the weights, participate in producing a token.</b> Total parameters determine what you must
-        store; active parameters determine what you must read. Those are different constraints against
-        different hardware limits — capacity versus bandwidth — and conflating them is the most common
-        error in back-of-envelope estimates.
+        The count under the figure is the reason a 753B model is servable at all: <b>40.3B
+        parameters, 5.4% of the weights, participate in producing a token.</b> Total parameters
+        determine what you must store; active parameters determine what you must read. Those are
+        different constraints against different hardware limits — capacity versus bandwidth — and
+        conflating them is the most common error in back-of-envelope estimates.
       </p>
 
       <p>
-        Two details from that diagram matter later. The <b>embedding table</b> holds 951M parameters
-        but costs essentially nothing to run, because a lookup reads one row rather than a matrix —
-        parameter counts are a poor proxy for cost. And the <b>indexer</b> appears on only 21 of the
-        78 layers, visible as the sparse marks under the layer map; that is a deliberate choice we
-        come back to when sparse attention starts dominating long-context cost.
+        Two details worth clicking on. The <b>embedding table</b> is one of the largest single blocks
+        in the model at 952M parameters, yet it costs essentially nothing to run, because a lookup
+        reads one row rather than a matrix — parameter counts are a poor proxy for cost. And the
+        <b>indexer</b> appears on only 21 of the 78 layers, so it shows up as a gap in an otherwise
+        regular row; that is a deliberate choice we come back to when sparse attention starts
+        dominating long-context cost.
+      </p>
+
+      <p>
+        The same viewer, pointed at any <code>config.json</code> you like and able to compare several
+        models at once, is available as a
+        <a href="../../tools/model-explorer/">standalone tool</a>.
       </p>
 
       <h2>Counting the bytes</h2>

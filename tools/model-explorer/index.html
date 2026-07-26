@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Model Explorer — Notes</title>
+    <meta
+      name="description"
+      content="Inspect any transformer architecture in 3D from its config.json, and compare models side by side."
+    />
+    <link rel="stylesheet" href="/src/styles/site.css" />
+    <link rel="stylesheet" href="/src/styles/tool.css" />
+  </head>
+  <body>
+    <div class="wrap wide">
+      <header class="tool-head">
+        <a class="home-link" href="../../">← Notes</a>
+        <h1>Model Explorer</h1>
+        <p class="tagline">
+          Architecture, drawn from the weights' own description of themselves. Give it a Hugging Face
+          <code>config.json</code> and it lays the model out in 3D: every projection sized by its real
+          matrix dimensions, coloured by what it does or by whether a single token touches it at all.
+          Load more than one to compare.
+        </p>
+      </header>
+
+      <div id="app"></div>
+
+      <footer class="site">
+        Built with distill's web components and three.js. Source on
+        <a href="https://github.com/dhruvyad/dhruvyad.github.io">GitHub</a>.
+      </footer>
+    </div>
+
+    <script type="module" src="./index.js"></script>
+  </body>
+</html>

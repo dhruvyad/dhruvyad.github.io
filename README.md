@@ -47,9 +47,33 @@ puts a modern build under it.
 | | |
 |---|---|
 | Components | distill's `template.v2.js`, vendored into `public/vendor/` |
-| Figures | Svelte 5 + D3, one module per figure |
-| Build | Vite, multi-page (one HTML entry per post) |
+| Figures | Svelte 5 + D3; three.js for the 3D architecture view |
+| Build | Vite, multi-page (one HTML entry per post and per tool) |
 | Deploy | GitHub Actions → GitHub Pages |
+
+## Layout
+
+```
+posts/<slug>/      distill articles          -> /posts/<slug>/
+tools/<slug>/      standalone tool pages     -> /tools/<slug>/
+src/components/    components shared by both
+src/lib/           glossary, figure mounting, architecture parsing
+src/glossary/      shared term definitions and their tooltip visuals
+```
+
+Both lists on the homepage are generated at build time: articles from each post's
+`<d-front-matter>`, tools from `tools/<slug>/meta.json`.
+
+## Tools
+
+`tools/model-explorer/` renders any Hugging Face `config.json` as an orbitable 3D model —
+`src/lib/architecture.js` parses the config into sized, positioned weight blocks, and
+`src/components/Model3D.svelte` draws them. The same component is embedded in the article; the tool
+adds preset models, file/paste loading, and a comparison table.
+
+The parser handles dense and sparse architectures, MLA and GQA/MHA attention, DeepSeek-style sparse
+attention indexers and MTP heads, and reproduces published parameter counts within about 1% across
+GLM-5.2, DeepSeek-V3, gpt-oss-120b, Mixtral-8x7B and Qwen3-8B.
 
 ### Why the template is vendored
 

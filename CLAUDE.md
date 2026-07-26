@@ -51,10 +51,30 @@ instance.
   files, tool docs).
 - New terms should go in the shared glossary rather than a per-post one, since they recur.
 
+## Site structure
+
+- The homepage has two sections: **Articles** and **Tools**. Both lists are generated at build time —
+  articles from each post's `<d-front-matter>`, tools from `tools/<slug>/meta.json` — so neither
+  needs hand-maintaining.
+- A visualisation worth building is usually worth exposing as a standalone **tool** as well as
+  embedding in the article. Build the component once in `src/components/`, take its data as a prop,
+  and let both consume it. The article gets one model; the tool gets model loading, comparison and
+  whatever else only makes sense standalone.
+- Tools can be richer than articles need to be: comparison across several inputs, file upload,
+  pasting your own data. Don't push that complexity into the article embed.
+
 ## Figures
 
 - **Interactive beats static.** Where a static table would do, prefer a figure the reader can
   manipulate — clickable parts, sliders over the parameters that actually matter.
+- **Prefer 3D and spatial layouts for things that are actually spatial.** An architecture is a
+  structure, so draw it as one: orbit, zoom, click into it. A stack of bars summarising the same
+  information is much weaker. `src/components/Model3D.svelte` is the example — three.js, instanced
+  geometry, blocks sized by real matrix dimensions.
+- **Drive visualisations from the source data, not from transcribed constants.** The 3D view parses
+  a real `config.json`; that is what makes it generalise to other models and keeps it honest.
+- Load heavy dependencies lazily. `mountFigureLazy` defers three.js (~157 kB gzip) until the reader
+  scrolls to the figure.
 - **Attach real metrics to parts of a diagram.** If a diagram shows an architecture, clicking a
   component should surface its cost: parameters, FLOPs, bytes read, share of the whole.
 - **Colour-code what's active; grey out what isn't.** Sparsity, utilisation and "how much of this
@@ -69,7 +89,8 @@ instance.
 
 ## Site conventions
 
-- **Homepage** is just the title and the article list. No tagline, no self-description, no byline.
+- **Homepage** is just the title and the Articles / Tools lists. No tagline, no self-description,
+  no byline.
 - **Byline** on each article: authors, published date, last updated date. Authors are Dhruv Yadav
   and the model that drafted it (e.g. "Claude Opus 5"). No affiliations, no DOI — distill's built-in
   `<d-byline>` renders those as empty headings, so it's suppressed in `article.css` and each post

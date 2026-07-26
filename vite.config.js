@@ -6,12 +6,22 @@ import { svelte } from '@sveltejs/vite-plugin-svelte'
 
 const root = dirname(fileURLToPath(import.meta.url))
 const postsDir = resolve(root, 'posts')
+const toolsDir = resolve(root, 'tools')
 
 /** Every directory under posts/ that has an index.html is a post. */
 function postSlugs() {
   if (!existsSync(postsDir)) return []
   return readdirSync(postsDir, { withFileTypes: true })
     .filter((e) => e.isDirectory() && existsSync(resolve(postsDir, e.name, 'index.html')))
+    .map((e) => e.name)
+    .sort()
+}
+
+/** Every directory under tools/ that has an index.html is a tool. */
+function toolSlugs() {
+  if (!existsSync(toolsDir)) return []
+  return readdirSync(toolsDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && existsSync(resolve(toolsDir, e.name, 'index.html')))
     .map((e) => e.name)
     .sort()
 }
@@ -29,6 +39,36 @@ function readFrontMatter(slug) {
     return JSON.parse(match[1])
   } catch (err) {
     throw new Error(`posts/${slug}/index.html has invalid front-matter JSON: ${err.message}`)
+  }
+}
+
+/**
+ * Exposes the tool list as `virtual:tools`. Tools are not distill articles, so
+ * their metadata lives in a plain meta.json next to the page.
+ */
+function toolsIndex() {
+  const virtualId = 'virtual:tools'
+  const resolvedId = '\0' + virtualId
+  return {
+    name: 'notes:tools-index',
+    resolveId(id) {
+      if (id === virtualId) return resolvedId
+    },
+    load(id) {
+      if (id !== resolvedId) return
+      const tools = toolSlugs().map((slug) => {
+        const metaPath = resolve(toolsDir, slug, 'meta.json')
+        const meta = existsSync(metaPath) ? JSON.parse(readFileSync(metaPath, 'utf8')) : {}
+        return {
+          slug,
+          title: meta.title ?? slug,
+          description: meta.description ?? '',
+          tags: meta.tags ?? [],
+          published: meta.published ?? null,
+        }
+      })
+      return `export default ${JSON.stringify(tools, null, 2)}`
+    },
   }
 }
 
@@ -104,7 +144,7 @@ export default defineConfig({
   // User site: served from the root of https://dhruvyad.github.io/
   base: '/',
   appType: 'mpa',
-  plugins: [svelte(), postsIndex(), copyBibliographies()],
+  plugins: [svelte(), postsIndex(), toolsIndex(), copyBibliographies()],
   build: {
     outDir: 'dist',
     emptyOutDir: true,
@@ -113,6 +153,9 @@ export default defineConfig({
         index: resolve(root, 'index.html'),
         ...Object.fromEntries(
           postSlugs().map((slug) => [slug, resolve(postsDir, slug, 'index.html')]),
+        ),
+        ...Object.fromEntries(
+          toolSlugs().map((slug) => [`tool-${slug}`, resolve(toolsDir, slug, 'index.html')]),
         ),
       },
     },

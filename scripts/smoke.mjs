@@ -145,11 +145,22 @@ const PAGE_CHECKS = `(() => {
     hasTitle: !!title && title.textContent.trim().length > 0,
     bylineText: byline ? byline.textContent.replace(/\\s+/g, ' ').trim().slice(0, 120) : '',
     postLinks: [...document.querySelectorAll('#post-list a')].map((a) => a.getAttribute('href')),
+    toolLinks: [...document.querySelectorAll('#tool-list a')].map((a) => a.getAttribute('href')),
+    toolMounted: !!document.querySelector('#app')?.childElementCount,
+    stages: document.querySelectorAll('.stage canvas').length,
+    triangles: Math.max(
+      0,
+      ...[...document.querySelectorAll('[data-triangles]')].map((e) => +e.dataset.triangles || 0),
+    ),
+    blocks: Math.max(
+      0,
+      ...[...document.querySelectorAll('[data-blocks]')].map((e) => +e.dataset.blocks || 0),
+    ),
   };
 })()`
 
-function postSlugs() {
-  const dir = resolve(root, 'posts')
+function slugsIn(kind) {
+  const dir = resolve(root, kind)
   if (!existsSync(dir)) return []
   return readdirSync(dir, { withFileTypes: true })
     .filter((e) => e.isDirectory() && existsSync(resolve(dir, e.name, 'index.html')))
@@ -164,7 +175,11 @@ const chrome = spawn(
     `--remote-debugging-port=${DEBUG_PORT}`,
     '--no-first-run',
     '--no-default-browser-check',
-    '--disable-gpu',
+    // Software WebGL, so the 3D figures actually render headlessly. Without
+    // these the canvas exists but three.js can't get a context, and the figure
+    // silently falls back.
+    '--use-angle=swiftshader',
+    '--enable-unsafe-swiftshader',
     '--hide-scrollbars',
     '--window-size=1280,900',
     // CI runners lack the namespaces Chrome's sandbox needs.
@@ -184,7 +199,16 @@ try {
 
   const pages = [
     { name: 'index', url: baseUrl, kind: 'index' },
-    ...postSlugs().map((slug) => ({ name: `posts/${slug}`, url: `${baseUrl}posts/${slug}/`, kind: 'post' })),
+    ...slugsIn('posts').map((slug) => ({
+      name: `posts/${slug}`,
+      url: `${baseUrl}posts/${slug}/`,
+      kind: 'post',
+    })),
+    ...slugsIn('tools').map((slug) => ({
+      name: `tools/${slug}`,
+      url: `${baseUrl}tools/${slug}/`,
+      kind: 'tool',
+    })),
   ]
 
   for (const page of pages) {
@@ -266,9 +290,20 @@ try {
           `refs ${r.citationEntries} · footnotes ${r.footnoteEntries}/${r.footnotes} · ` +
           `figures ${r.figures.filter((f) => f.mounted).length}/${r.figures.length}`,
       )
+    } else if (page.kind === 'tool') {
+      if (!r.toolMounted) note(page.name, 'tool app rendered nothing')
+      if (r.stages === 0) note(page.name, 'no 3D stage on the page')
+      if (r.triangles === 0) note(page.name, '3D view drew no geometry')
+      console.log(
+        `  ${page.name}\n    ${r.stages} 3D stage(s) · ${r.triangles.toLocaleString()} triangles · ` +
+          `${r.blocks.toLocaleString()} blocks`,
+      )
     } else {
       if (r.postLinks.length === 0) note(page.name, 'post list is empty')
-      console.log(`  ${page.name}\n    ${r.postLinks.length} post link(s): ${r.postLinks.join(', ')}`)
+      if (r.toolLinks.length === 0) note(page.name, 'tool list is empty')
+      console.log(
+        `  ${page.name}\n    ${r.postLinks.length} post link(s), ${r.toolLinks.length} tool link(s)`,
+      )
     }
 
     cdp.listeners = cdp.listeners.filter((l) => l !== listener)

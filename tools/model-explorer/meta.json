@@ -1,0 +1,7 @@
+{
+  "title": "Model Explorer",
+  "description": "Load any Hugging Face config.json and inspect the architecture in 3D — roles, dimensions, and which parts a single token activates. Compare several models side by side.",
+  "tags": ["3d", "architecture", "tool"],
+  "published": "2026-07-26",
+  "updated": "2026-07-26"
+}

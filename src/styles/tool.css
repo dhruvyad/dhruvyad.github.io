@@ -1,0 +1,91 @@
+/*
+ * Tool pages. They share the site's typography but are not distill articles —
+ * they get a wider measure, because interactive things need room.
+ */
+
+.wrap.wide {
+  max-width: 1040px;
+}
+
+.tool-head {
+  padding: 3.5rem 0 0;
+}
+
+.tool-head .home-link {
+  display: inline-block;
+  margin-bottom: 1.5rem;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(0, 0, 0, 0.5);
+  text-decoration: none;
+}
+
+.tool-head .home-link:hover {
+  color: rgba(0, 0, 0, 0.8);
+}
+
+.tool-head h1 {
+  font-size: 2.2rem;
+  line-height: 1.15em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.6rem;
+}
+
+.tool-head .tagline {
+  font-size: 1rem;
+  color: var(--muted);
+  margin: 0 0 2.5rem;
+  max-width: 46em;
+}
+
+.tool-head code {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 0.1em 0.35em;
+  border-radius: 2px;
+}
+
+/* Figure controls are defined in article.css for posts; tools need them too. */
+.figure-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35em 1.25em;
+  margin-bottom: 0.75em;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.figure-controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.figure-controls input[type='range'] {
+  width: 160px;
+  accent-color: #c0392b;
+}
+
+.figure-controls .value {
+  font-variant-numeric: tabular-nums;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  color: #000;
+  min-width: 3.2em;
+}
+
+.figure-controls button {
+  font: inherit;
+  padding: 0.2em 0.7em;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.figure-controls button:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
