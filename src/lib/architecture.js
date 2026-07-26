@@ -256,3 +256,90 @@ export function summarise(arch, cfg) {
     blocks: blocks.length,
   }
 }
+
+/**
+ * Collapses a parsed architecture into its *unique* structure plus multiplicities.
+ *
+ * This is what makes a model fit on one screen. GLM-5.2 has 19,767 weight
+ * matrices, but only about a dozen distinct ones: a 78-layer model is not 78
+ * things, it is one thing 78 times, and a 256-expert layer is one expert 256
+ * times. Drawing the repeats is what made every previous attempt a slab.
+ *
+ * Returns a shallow tree of stages, where a stage is either a single tensor or a
+ * group with a `count`. Groups nest, so "MoE layer ×75" contains "expert ×256".
+ */
+export function collapseArchitecture(cfg) {
+  const arch = parseArchitecture(cfg)
+  const { meta, layers, blocks } = arch
+
+  const tensor = (b) => ({
+    kind: 'tensor',
+    role: b.role,
+    name: b.name,
+    dims: b.dims,
+    params: b.params,
+    note: b.note,
+  })
+
+  /** All blocks belonging to one representative layer, minus the expert spam. */
+  const forLayer = (idx) => blocks.filter((b) => b.layer === idx)
+
+  const denseIdx = layers.find((l) => l.dense)?.index
+  const moeIdx = layers.find((l) => !l.dense)?.index
+  const indexedIdx = layers.find((l) => l.fullIndexer)?.index
+
+  const stages = []
+  const embed = blocks.find((b) => b.role === 'embedding')
+  if (embed) stages.push(tensor(embed))
+
+  const layerGroup = (idx, count, label) => {
+    if (idx == null || !count) return null
+    const parts = []
+    const own = forLayer(idx)
+    for (const b of own) {
+      if (b.role === 'routed_expert') continue
+      parts.push(tensor(b))
+    }
+    // The experts collapse into a single group with its own multiplicity.
+    const anExpert = own.find((b) => b.role === 'routed_expert')
+    if (anExpert) {
+      parts.push({
+        kind: 'group',
+        label: 'expert',
+        count: meta.nExperts,
+        active: meta.topk,
+        parts: [tensor({ ...anExpert, name: 'expert' })],
+      })
+    }
+    return { kind: 'group', label, count, parts }
+  }
+
+  // A layer that owns an indexer differs from one that reuses a neighbour's, so
+  // they are genuinely distinct kinds and get separate groups.
+  const denseCount = layers.filter((l) => l.dense).length
+  const moeWithIdx = layers.filter((l) => !l.dense && l.fullIndexer).length
+  const moeWithout = layers.filter((l) => !l.dense && !l.fullIndexer).length
+
+  const dense = layerGroup(denseIdx, denseCount, meta.isMoE ? 'dense layer' : 'layer')
+  if (dense) stages.push(dense)
+
+  if (meta.isMoE) {
+    if (moeWithIdx) {
+      const idx = layers.find((l) => !l.dense && l.fullIndexer)?.index
+      stages.push(layerGroup(idx, moeWithIdx, 'MoE layer, own indexer'))
+    }
+    if (moeWithout) {
+      const idx = layers.find((l) => !l.dense && !l.fullIndexer)?.index
+      stages.push(layerGroup(idx, moeWithout, moeWithIdx ? 'MoE layer, shared indexer' : 'MoE layer'))
+    }
+  } else if (denseCount < layers.length) {
+    stages.push(layerGroup(moeIdx ?? 1, layers.length - denseCount, 'layer'))
+  }
+
+  const mtp = blocks.find((b) => b.role === 'mtp')
+  if (mtp) stages.push(tensor(mtp))
+  const head = blocks.find((b) => b.role === 'lm_head')
+  if (head) stages.push(tensor(head))
+
+  return { meta, stages, totalBlocks: blocks.length }
+}

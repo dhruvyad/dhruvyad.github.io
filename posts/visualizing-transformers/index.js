@@ -4,6 +4,7 @@ import { TERMS } from '../../src/glossary/terms.js'
 import DotProduct from './figures/DotProduct.svelte'
 import MatMul from './figures/MatMul.svelte'
 import Attention from './figures/Attention.svelte'
+import ModelMap from './figures/ModelMap.svelte'
 
 installGlossary({
   roots: [document.querySelector('d-title'), document.querySelector('d-article')],
@@ -14,3 +15,4 @@ installGlossary({
 mountFigure('dot-product', DotProduct)
 mountFigure('matmul', MatMul)
 mountFigure('attention', Attention)
+mountFigure('model-map', ModelMap)

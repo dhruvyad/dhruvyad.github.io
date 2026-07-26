@@ -206,6 +206,47 @@
         are stored.
       </p>
 
+      <h2>Scaling the picture</h2>
+
+      <p>
+        Everything above draws each number as its own cell. That is the right level for learning an
+        operation and completely wrong for looking at a model: the smallest weight matrix in a
+        frontier model has a few million entries, and there are tens of thousands of matrices. Cells
+        are five orders of magnitude too small a unit.
+      </p>
+
+      <p>
+        So above a certain zoom the picture has to encode <em>shape and role</em> rather than values.
+        A weight matrix becomes a rectangle whose proportions are its real dimensions and whose
+        colour is what it does. That alone is not enough — twenty thousand rectangles is a wall, as
+        anyone who has seen a full-model diagram knows.
+      </p>
+
+      <p>
+        The thing that makes it fit is that models are enormously repetitive. A 78-layer network is
+        not 78 different things; it is one thing 78 times. A 256-expert layer is one expert 256
+        times. Fold the repeats into a multiplicity badge and a model with
+        <b>19,767 weight matrices collapses to six stages and about two dozen distinct shapes</b> —
+        which fits on a screen with room to spare.
+      </p>
+
+      <d-figure id="model-map">
+        <div id="model-map-target" class="figure-target"></div>
+        <figcaption>
+          The whole of GLM-5.2, at three zoom levels that share one grammar. Click a layer to see its
+          matrices at their real proportions, click a matrix to look inside it, and use the zoom to
+          go from heatmap to individual numbers. Nothing is hidden — the ×N badges account for every
+          repeat.
+        </figcaption>
+      </d-figure>
+
+      <p>
+        Notice what the collapse reveals for free. The MoE layers split into two kinds, ×18 and ×57,
+        because only some of them own a sparse-attention indexer and the rest reuse a neighbour's.
+        That is a real architectural decision, and it shows up here as structure rather than as a
+        footnote.
+      </p>
+
       <h2>What comes next</h2>
 
       <p>
