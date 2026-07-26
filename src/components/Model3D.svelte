@@ -24,6 +24,10 @@
     Vector3,
     Fog,
     DynamicDrawUsage,
+    BufferGeometry,
+    BufferAttribute,
+    LineSegments,
+    LineBasicMaterial,
   } from 'three'
   import { untrack } from 'svelte'
   import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -38,6 +42,9 @@
 
   let logB = $state(0)
   let colorMode = $state('activation')
+  /** null = whole model; otherwise the layer we've drilled into. */
+  let focusLayer = $state(null)
+  let showPath = $state(true)
   let selected = $state(null)
   let hovered = $state(null)
   let failed = $state(false)
@@ -74,6 +81,26 @@
       out.set(l.index, rank)
     }
     return out
+  })
+
+  /**
+   * The experts a single token would route to in each layer — the first `topk` of
+   * that layer's shuffle. Illustrative, not measured: a config.json describes the
+   * shape of the router, never its learned behaviour.
+   */
+  const tokenRoute = $derived.by(() => {
+    if (!meta.isMoE) return new Map()
+    const route = new Map()
+    for (const l of layers) {
+      if (l.dense) continue
+      const rank = expertRank.get(l.index)
+      const chosen = []
+      for (let e = 0; e < meta.nExperts && chosen.length < meta.topk; e++) {
+        if (rank[e] < meta.topk) chosen.push(e)
+      }
+      route.set(l.index, chosen)
+    }
+    return route
   })
 
   // ---------------------------------------------------------- role aggregates
@@ -140,6 +167,18 @@
   const gridCols = $derived(meta.isMoE ? Math.ceil(Math.sqrt(meta.nExperts)) : 1)
   const gridHalf = $derived(((gridCols - 1) * CELL) / 2)
 
+  /** Where a given expert cell sits, so the overlay can point at it. */
+  function expertPos(layer, e) {
+    return [
+      xOf(layer),
+      gridHalf - Math.floor(e / gridCols) * CELL,
+      -gridHalf + (e % gridCols) * CELL,
+    ]
+  }
+
+  /** The router's position for a layer — the hub the fan-out radiates from. */
+  const routerPos = (layer) => [xOf(layer), -gridHalf - 1.3, -gridHalf + 0.6]
+
   function place(b) {
     const x = xOf(b.layer)
     if (b.role === 'routed_expert') {
@@ -192,11 +231,13 @@
   let host
   let renderer, scene, camera, controls, raycaster
   let meshes = new Map()
+  let routeLines, spineLines
   let needsRender = true
   let visible = true
   let disposed = false
 
   const DORMANT = new Color(0xdedbd6)
+  const FADED = new Color(0xeeecea)
   const ACTIVE = new Color(0xc0392b)
   const HILITE = new Color(0x101010)
 
@@ -208,6 +249,47 @@
   const colorFor = (b) =>
     colorMode === 'role' ? new Color(ROLES[b.role].color) : isActive(b) ? ACTIVE : DORMANT
 
+  /** Rebuilds the fan-out lines and the spine for the current focus. */
+  function buildRoute() {
+    if (!routeLines) return
+    const fan = []
+    const spine = []
+
+    const inFocus = (l) => focusLayer === null || l === focusLayer
+    const moeLayers = layers.filter((l) => !l.dense)
+
+    if (showPath && meta.isMoE) {
+      for (const l of moeLayers) {
+        if (!inFocus(l.index)) continue
+        const hub = routerPos(l.index)
+        for (const e of tokenRoute.get(l.index) ?? []) {
+          const p = expertPos(l.index, e)
+          fan.push(hub[0], hub[1], hub[2], p[0], p[1], p[2])
+        }
+      }
+    }
+
+    // The spine runs along the layer hubs, so you can follow one token forward.
+    if (showPath) {
+      const hubs = layers.map((l) => (l.dense ? [xOf(l.index), 0, 0] : routerPos(l.index)))
+      for (let i = 0; i < hubs.length - 1; i++) {
+        if (focusLayer !== null && Math.abs(i - focusLayer) > 1) continue
+        spine.push(...hubs[i], ...hubs[i + 1])
+      }
+    }
+
+    const set = (obj, arr) => {
+      const g = new BufferGeometry()
+      g.setAttribute('position', new BufferAttribute(new Float32Array(arr), 3))
+      obj.geometry.dispose()
+      obj.geometry = g
+      obj.visible = arr.length > 0
+    }
+    set(routeLines, fan)
+    set(spineLines, spine)
+    needsRender = true
+  }
+
   const scratch = new Object3D()
 
   function paint() {
@@ -217,20 +299,24 @@
       const varies = role === 'routed_expert'
       items.forEach((b, i) => {
         const focus = selected?.id === b.id || hovered?.id === b.id
-        mesh.setColorAt(i, focus ? HILITE : colorFor(b))
-        if (!varies) return
+        const dimmed = focusLayer !== null && b.layer !== focusLayer
+        mesh.setColorAt(i, focus ? HILITE : dimmed ? FADED : colorFor(b))
+        if (!varies && focusLayer === null) return
         // A wall of 19,200 identical cubes hides its own interior. Shrinking the
         // dormant ones turns each expert panel into a lattice you can see
         // through, so the few active experts read from any angle.
         const { pos, size } = place(b)
-        const k = focus || isActive(b) || colorMode === 'role' ? 1 : 0.34
+        let k = focus || isActive(b) || colorMode === 'role' ? 1 : 0.34
+        // Everything outside the focused layer shrinks right down, so the layer
+        // you're inspecting is not buried in 77 others.
+        if (dimmed) k *= 0.2
         scratch.position.set(pos[0], pos[1], pos[2])
         scratch.scale.set(size[0] * k, size[1] * k, size[2] * k)
         scratch.updateMatrix()
         mesh.setMatrixAt(i, scratch.matrix)
       })
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
-      if (varies) mesh.instanceMatrix.needsUpdate = true
+      if (varies || focusLayer !== null) mesh.instanceMatrix.needsUpdate = true
     }
     needsRender = true
   }
@@ -294,6 +380,22 @@
       scene.add(mesh)
       meshes.set(role, mesh)
     }
+
+    // Routing overlay: a spine advancing through the layers, and at each MoE
+    // layer a fan of lines from the router to the experts this token selects.
+    // Without it the model reads as a solid slab and the routing — the whole
+    // point of a mixture of experts — is invisible.
+    routeLines = new LineSegments(
+      new BufferGeometry(),
+      new LineBasicMaterial({ color: 0xc0392b, transparent: true, opacity: 0.85 }),
+    )
+    spineLines = new LineSegments(
+      new BufferGeometry(),
+      new LineBasicMaterial({ color: 0x333333, transparent: true, opacity: 0.55 }),
+    )
+    scene.add(routeLines)
+    scene.add(spineLines)
+    buildRoute()
 
     controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
@@ -361,6 +463,29 @@
     paint()
   }
 
+  /** Frames a single layer face-on, close enough to read its expert grid. */
+  function focusOn(layer) {
+    focusLayer = layer
+    if (!controls) return
+    controls.enableDamping = false
+    controls.update()
+    if (layer === null) {
+      controls.reset()
+    } else {
+      const x = xOf(layer)
+      // Distance that actually fits the layer: half its vertical extent (the
+      // expert grid plus the router and attention columns around it) divided by
+      // tan(fov/2), with a margin.
+      const halfExtent = gridHalf + 2.6
+      const d = (halfExtent / Math.tan(((camera.fov / 2) * Math.PI) / 180)) * 1.2
+      controls.target.set(x, 0, 0)
+      camera.position.set(x - d * 0.5, d * 0.26, d * 0.82)
+      controls.update()
+    }
+    controls.enableDamping = true
+    needsRender = true
+  }
+
   function resetView() {
     if (!controls) return
     // Order matters. OrbitControls only clears its residual rotation delta inside
@@ -371,6 +496,7 @@
     controls.update()
     controls.reset()
     controls.enableDamping = true
+    focusLayer = null
     needsRender = true
   }
 
@@ -380,7 +506,13 @@
     // effect would repaint far more often than needed.
     lit
     colorMode
-    if (renderer) untrack(() => paint())
+    focusLayer
+    showPath
+    if (renderer)
+      untrack(() => {
+        paint()
+        buildRoute()
+      })
   })
 
   $effect(() =>
@@ -453,9 +585,29 @@
     Activation
   </button>
   <button class:active={colorMode === 'role'} onclick={() => (colorMode = 'role')}>Role</button>
+  {#if meta.isMoE}
+    <button class:active={showPath} onclick={() => (showPath = !showPath)}>Routing</button>
+  {/if}
   <button onclick={resetView}>Reset view</button>
-  <span class="hint">drag to orbit · scroll to zoom · click a part</span>
 </div>
+
+{#if meta.isMoE}
+  <div class="figure-controls">
+    <label>
+      Inspect layer
+      <span class="value">{focusLayer === null ? 'all' : focusLayer}</span>
+      <input
+        type="range"
+        min="-1"
+        max={meta.layers - 1}
+        step="1"
+        value={focusLayer === null ? -1 : focusLayer}
+        oninput={(e) => focusOn(+e.currentTarget.value < 0 ? null : +e.currentTarget.value)}
+      />
+    </label>
+    <span class="hint">drag to orbit · scroll to zoom · click a part</span>
+  </div>
+{/if}
 
 <div
   class="stage"
@@ -484,6 +636,12 @@
     <span class="lg"><i style="background:#dedbd6"></i> dormant — held in memory, not used</span>
     {#if meta.isMoE}
       <span class="lg dim">{lit} of {meta.nExperts} experts lit per layer at batch {B}</span>
+      {#if showPath}
+        <span class="lg">
+          <i style="background:#c0392b;height:2px"></i>
+          router → the {meta.topk} experts one token selects
+        </span>
+      {/if}
     {/if}
   {/if}
 </div>
@@ -524,6 +682,40 @@
         </div>
       {/if}
     </div>
+  {:else if focusLayer !== null && meta.isMoE}
+    <div class="head">
+      <span class="name">Layer {focusLayer}</span>
+      <span class="det">
+        {layers[focusLayer]?.dense ? 'dense MLP — no routing here' : `router selects ${meta.topk} of ${meta.nExperts}`}
+      </span>
+    </div>
+    <div class="readouts">
+      <div class="ro">
+        <span class="k">experts in layer</span>
+        <span class="v">{layers[focusLayer]?.dense ? '—' : meta.nExperts}</span>
+      </div>
+      <div class="ro">
+        <span class="k">selected per token</span>
+        <span class="v on">{layers[focusLayer]?.dense ? '—' : meta.topk}</span>
+      </div>
+      <div class="ro">
+        <span class="k">weights in layer</span>
+        <span class="v">
+          {fmtP(layers[focusLayer]?.dense ? 3 * meta.hidden * (meta.ffn ?? 0) : meta.nExperts * 3 * meta.hidden * meta.moeFfn)}
+        </span>
+      </div>
+      <div class="ro">
+        <span class="k">read for one token</span>
+        <span class="v">
+          {fmtP(layers[focusLayer]?.dense ? 3 * meta.hidden * (meta.ffn ?? 0) : meta.topk * 3 * meta.hidden * meta.moeFfn)}
+        </span>
+      </div>
+    </div>
+    <p class="note">
+      Which experts get picked is illustrative — a <code>config.json</code> describes the router's
+      shape, never what it learned. The count, the fan-out and the fraction of the layer it reaches
+      are real.
+    </p>
   {:else}
     <p class="prompt">
       <b>{label || meta.name}</b> · {meta.layers} layers ·
@@ -616,11 +808,24 @@
     color: rgba(0, 0, 0, 0.5);
   }
 
-  .prompt {
+  .prompt,
+  .note {
     margin: 0;
     font-size: 12.5px;
     line-height: 1.6em;
     color: rgba(0, 0, 0, 0.6);
+  }
+
+  .note {
+    margin-top: 0.8em;
+  }
+
+  .note code {
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 0.92em;
+    background: rgba(0, 0, 0, 0.05);
+    padding: 0.05em 0.3em;
+    border-radius: 2px;
   }
 
   .readouts {

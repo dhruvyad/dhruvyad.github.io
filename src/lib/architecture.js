@@ -169,6 +169,7 @@ export function parseArchitecture(cfg) {
     meta: {
       name: cfg._name_or_path ?? cfg.architectures?.[0] ?? 'model',
       hidden: H,
+      ffn,
       layers: L,
       vocab: V,
       heads,
