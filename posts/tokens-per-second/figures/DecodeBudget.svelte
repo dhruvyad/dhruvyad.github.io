@@ -24,7 +24,7 @@
     { label: 'FP4', bytes: 0.5 },
   ]
 
-  const width = 660
+  const width = 704
   const barHeight = 30
   const height = 118
   const margin = { top: 22, right: 8, bottom: 8, left: 8 }

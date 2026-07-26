@@ -22,7 +22,7 @@
   const maxBatch = $derived(Math.max(0, Math.floor((usable - weights) / (perToken * S))))
   const fits = $derived(used <= usable)
 
-  const width = 660
+  const width = 704
   const height = 132
   const margin = { top: 26, right: 8, bottom: 8, left: 8 }
   const innerWidth = width - margin.left - margin.right

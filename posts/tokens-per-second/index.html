@@ -231,7 +231,7 @@
         The figure below is that calculation, live:
       </p>
 
-      <d-figure id="decode-budget" class="wide">
+      <d-figure id="decode-budget">
         <div id="decode-budget-target" class="figure-target"></div>
         <figcaption>
           The decode step budget for GLM-5.2. Weights dominate at small batch; KV and indexer
@@ -278,7 +278,7 @@
         That function saturates fast, and the consequence is stark:
       </p>
 
-      <d-figure id="expert-traffic" class="wide">
+      <d-figure id="expert-traffic">
         <div id="expert-traffic-target" class="figure-target"></div>
         <figcaption>
           Weight bytes per decode step as a function of batch size. A dense 40B model would sit on
@@ -316,7 +316,7 @@
         87.75 GiB per sequence, so those 375 GB hold four such sequences.
       </p>
 
-      <d-figure id="memory-budget" class="wide">
+      <d-figure id="memory-budget">
         <div id="memory-budget-target" class="figure-target"></div>
         <figcaption>
           HBM as a fixed budget. Weights are a fixed cost set by quantisation; KV cache grows with
@@ -356,7 +356,7 @@
         larger than the entire L2 cache, and 575 times larger than one SM's shared memory.
       </p>
 
-      <d-figure id="attention-traffic" class="wide">
+      <d-figure id="attention-traffic">
         <div id="attention-traffic-target" class="figure-target"></div>
         <figcaption>
           The score matrix against the memory hierarchy, log-log. It crosses every level of on-chip
@@ -467,7 +467,7 @@
         cost.
       </p>
 
-      <d-figure id="speculative" class="wide">
+      <d-figure id="speculative">
         <div id="speculative-target" class="figure-target"></div>
         <figcaption>
           Net wall-clock speedup, with the verification cost taken from the roofline model rather

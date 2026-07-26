@@ -6,7 +6,7 @@
   let logS = $state(13)
   const S = $derived(Math.round(2 ** logS))
 
-  const width = 660
+  const width = 704
   const height = 320
   const margin = { top: 18, right: 176, bottom: 40, left: 88 }
   const innerWidth = width - margin.left - margin.right

@@ -16,7 +16,7 @@
   /** Parameters whose weights must be read for a step of batch size B. */
   const paramsRead = (b) => residentParams + sparseLayers * expertsTouched(b) * expertParams
 
-  const width = 660
+  const width = 704
   const height = 300
   const margin = { top: 18, right: 132, bottom: 40, left: 56 }
   const innerWidth = width - margin.left - margin.right
@@ -94,9 +94,9 @@
     </text>
 
     <path d={moePath} class="moe" />
-    <!-- Sits in the empty upper-left rather than at the curve's right end, where
-         it would collide with the 753B ceiling label. -->
-    <text x="8" y="14" class="anno moe-t">GLM-5.2 MoE</text>
+    <!-- Upper-left, clear of both the 753B ceiling line just above it and the
+         curve, which is still near the floor at this end. -->
+    <text x="8" y="36" class="anno moe-t">GLM-5.2 MoE</text>
 
     <line x1={x(B)} x2={x(B)} y1="0" y2={innerHeight} class="marker" />
     <circle cx={x(B)} cy={y(read)} r="5" class="dot" />

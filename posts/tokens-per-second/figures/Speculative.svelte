@@ -12,7 +12,7 @@
   const B = $derived(Math.round(2 ** logB))
   const r = $derived(specSpeedup({ alpha, k, B, draftCost }))
 
-  const width = 660
+  const width = 704
   const height = 290
   const margin = { top: 18, right: 96, bottom: 40, left: 62 }
   const innerWidth = width - margin.left - margin.right
