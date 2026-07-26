@@ -101,8 +101,8 @@ function copyBibliographies() {
 }
 
 export default defineConfig({
-  // Project site: https://dhruvyad.github.io/notes/
-  base: '/notes/',
+  // User site: served from the root of https://dhruvyad.github.io/
+  base: '/',
   appType: 'mpa',
   plugins: [svelte(), postsIndex(), copyBibliographies()],
   build: {

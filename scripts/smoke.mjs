@@ -7,7 +7,7 @@
  * and the interesting parts — math, citations, lazily-mounted figures — all
  * happen at runtime. A build that "succeeds" tells you almost nothing.
  *
- * Usage: node scripts/smoke.mjs [baseUrl]   (default http://localhost:4173/notes/)
+ * Usage: node scripts/smoke.mjs [baseUrl]   (default http://localhost:4173/)
  * Assumes `npm run build` has run and a server is serving dist/.
  */
 import { spawn } from 'node:child_process'
@@ -16,7 +16,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const baseUrl = (process.argv[2] ?? 'http://localhost:4173/notes/').replace(/\/?$/, '/')
+const baseUrl = (process.argv[2] ?? 'http://localhost:4173/').replace(/\/?$/, '/')
 const DEBUG_PORT = 9333
 
 function findChrome() {

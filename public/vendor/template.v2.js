@@ -1,4 +1,4 @@
-/* Vendored for github.com/dhruvyad/notes — see scripts/vendor-distill.mjs.
+/* Vendored for github.com/dhruvyad/dhruvyad.github.io — see scripts/vendor-distill.mjs.
    Upstream: https://distill.pub/template.v2.js (Apache-2.0, The Distill Template Authors).
    Local modification: KaTeX and polyfill URLs now resolve relative to this file
    instead of pointing at distill.pub. */

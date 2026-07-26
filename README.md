@@ -3,7 +3,7 @@
 A personal [distill.pub](https://distill.pub) — interactive explainers, written while learning
 things properly.
 
-**Live: https://dhruvyad.github.io/notes/**
+**Live: https://dhruvyad.github.io/**
 
 Every push to `main` rebuilds and republishes the site.
 
@@ -14,7 +14,7 @@ Every push to `main` rebuilds and republishes the site.
 ```bash
 npm install                                   # once
 npm run new-post -- softmax-temperature "Softmax, Slowly"
-npm run dev                                   # http://localhost:5173/notes/
+npm run dev                                   # http://localhost:5173/
 ```
 
 That creates `posts/<slug>/` with the boilerplate wired up. Edit `index.html`, and the homepage

@@ -219,5 +219,5 @@ console.log(`Created posts/${slug}/
   figures/Example.svelte  a starter interactive figure
   bibliography.bib      citation keys for <d-cite>
 
-Next: npm run dev, then open http://localhost:5173/notes/posts/${slug}/
+Next: npm run dev, then open http://localhost:5173/posts/${slug}/
 The homepage picks it up automatically from the front matter.`)
