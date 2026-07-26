@@ -28,6 +28,10 @@
     composite: { fill: '#cfd8ea', stroke: '#7d90b5' },
     moe: { fill: '#f6ddd2', stroke: '#c99378' },
     router: { fill: '#e4e4e4', stroke: '#8f8f8f' },
+    // leaf arithmetic — where the decomposition bottoms out
+    elementwise: { fill: '#fbe6d4', stroke: '#c9a077' },
+    reduce: { fill: '#d6e9ea', stroke: '#7fa6a9' },
+    weight: { fill: '#f4f3f1', stroke: '#b6b2ab' },
     terminal: { fill: 'none', stroke: 'none' },
   }
 
@@ -67,16 +71,27 @@
    * they share a column, otherwise up, across, and in — which is how the paper
    * draws V bypassing into the second MatMul.
    */
-  function route(a, b) {
+  function route(a, b, e) {
     const x1 = cx(a)
     const y1 = cy(a) - (a.kind === 'terminal' ? 12 : BOXH / 2)
     const x2 = cx(b)
     const y2 = cy(b) + BOXH / 2
+    // An explicit side route: out, up past everything, and back in. Residual
+    // connections use this so they are visibly going *around* the block rather
+    // than being lost underneath the main path.
+    if (e?.via != null) {
+      const vx = width / 2 + e.via * COL
+      const outY = a.kind === 'terminal' ? y1 + 6 : cy(a)
+      return `M${x1},${outY} L${vx},${outY} L${vx},${y2} L${x2},${y2}`
+    }
     if (Math.abs(x1 - x2) < 2) return `M${x1},${y1} L${x2},${y2}`
     // Clear the metadata band under the target, or the wire runs through the text.
     const mid = y2 + (metaBelow(b) ? 38 : 22)
     return `M${x1},${y1} L${x1},${mid} L${x2},${mid} L${x2},${y2}`
   }
+
+  let hovered = $state(null)
+  const explain = $derived(hovered ?? null)
 
   const enter = (n) => {
     if (n.figure && onFigure) return onFigure(n.figure)
@@ -101,6 +116,9 @@
     <marker id="bd-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
       <path d="M0,1 L9,5 L0,9 z" fill="#444" />
     </marker>
+    <marker id="bd-arrow-res" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,1 L9,5 L0,9 z" fill="#2c7fb8" />
+    </marker>
   </defs>
 
   <text x="0" y="14" class="title">{spec.title}</text>
@@ -111,9 +129,19 @@
     {@const a = byId.get(e.from)}
     {@const b = byId.get(e.to)}
     {#if a && b}
-      <path d={route(a, b)} class="edge" marker-end="url(#bd-arrow)" />
+      <path
+        d={route(a, b, e)}
+        class="edge"
+        class:residual={e.residual}
+        marker-end="url({e.residual ? '#bd-arrow-res' : '#bd-arrow'})"
+      />
       {#if e.label}
-        <text x={cx(a) + 7} y={(cy(a) + cy(b)) / 2 + 4} class="elabel">{e.label}</text>
+        <text
+          x={e.via != null ? width / 2 + e.via * COL + 7 : cx(a) + 7}
+          y={(cy(a) + cy(b)) / 2 + 4}
+          class="elabel"
+          class:res={e.residual}>{e.label}</text
+        >
       {/if}
     {/if}
   {/each}
@@ -133,6 +161,10 @@
         aria-label={n.label}
         onclick={() => enter(n)}
         onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enter(n)}
+        onpointerenter={() => (hovered = n)}
+        onpointerleave={() => (hovered = null)}
+        onfocus={() => (hovered = n)}
+        onblur={() => (hovered = null)}
       >
         <!-- stacked cards behind the box, for things that repeat -->
         {#if n.stack}
@@ -158,6 +190,7 @@
           fill={KINDS[n.kind].fill}
           stroke={KINDS[n.kind].stroke}
           stroke-width="1.4"
+          stroke-dasharray={n.kind === 'weight' ? '4 3' : undefined}
           class="boxrect"
         />
         <text {x} y={y + (n.note ? -1 : 4)} class="label">{n.label}</text>
@@ -187,7 +220,9 @@
   {/each}
 </svg>
 
-{#if spec.note}
+{#if explain?.why}
+  <p class="why"><b>{explain.label}</b> — {explain.why}</p>
+{:else if spec.note}
   <p class="note">{@html spec.note}</p>
 {/if}
 
@@ -207,6 +242,18 @@
     fill: none;
     stroke: #444;
     stroke-width: 1.5;
+  }
+
+  /* Residual connections are drawn distinctly, because the point of them is
+     that they route *around* the computation. */
+  .edge.residual {
+    stroke: #2c7fb8;
+    stroke-width: 1.6;
+    stroke-dasharray: 5 3;
+  }
+
+  .elabel.res {
+    fill: #2c7fb8;
   }
 
   .elabel {
@@ -320,10 +367,23 @@
     font-style: italic;
   }
 
-  .note {
+  .note,
+  .why {
     font-size: 12px;
     line-height: 1.6em;
     color: rgba(0, 0, 0, 0.6);
     margin: 0.9em 0 0;
+    min-height: 3.2em;
+  }
+
+  .why {
+    border-left: 3px solid rgba(0, 0, 0, 0.18);
+    padding-left: 0.8em;
+    color: rgba(0, 0, 0, 0.72);
+  }
+
+  .why b {
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 0.95em;
   }
 </style>

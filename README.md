@@ -68,8 +68,9 @@ Both lists on the homepage are generated at build time: articles from each post'
 
 `tools/model-explorer/` renders any Hugging Face `config.json` as a dataflow block diagram —
 `src/lib/diagrams.js` turns the config into diagram specs and `src/components/BlockDiagram.svelte`
-draws them, with composite boxes opening into their own diagram. The same component is embedded in
-both articles; the tool adds preset models, file/paste loading, and a comparison table.
+draws them, with composite boxes opening into their own diagram — all the way down to the multiplies
+and additions, with dimensions and operation counts at every level. The same component is embedded in
+the article; the tool adds preset models, file/paste loading, and a comparison table.
 
 The parser handles dense and sparse architectures, MLA and GQA/MHA attention, DeepSeek-style sparse
 attention indexers and MTP heads, and reproduces published parameter counts within about 1% across

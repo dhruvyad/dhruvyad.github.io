@@ -1,5 +1,10 @@
 /**
- * Turns a Hugging Face `config.json` into a list of drawable blocks.
+ * Turns a Hugging Face `config.json` into a flat list of weight blocks, and
+ * summarises an architecture for comparison.
+ *
+ * The diagram specs live in ./diagrams.js and are what the site actually draws;
+ * this module is the numeric side — parameter counts, KV-cache sizes, attention
+ * kind — used by the model explorer's comparison table.
  *
  * The point is that this reads the config rather than hard-coding one model: give
  * it a dense Llama-shaped config and you get attention plus MLP per layer; give it
@@ -10,18 +15,6 @@
  * Each block carries its two matrix dimensions, so a renderer can size it by
  * actual dimensionality instead of by a guess.
  */
-
-export const ROLES = {
-  embedding: { label: 'Embedding lookup', color: 0x8e6fb5 },
-  attention: { label: 'Attention', color: 0x2c7fb8 },
-  indexer: { label: 'Sparse-attention indexer', color: 0x00a0a0 },
-  dense_mlp: { label: 'Dense MLP', color: 0xe08a1e },
-  router: { label: 'Router', color: 0x6b6b6b },
-  shared_expert: { label: 'Shared expert', color: 0xd4a017 },
-  routed_expert: { label: 'Routed expert', color: 0xc0392b },
-  mtp: { label: 'MTP head', color: 0x9b59b6 },
-  lm_head: { label: 'LM head', color: 0x8e6fb5 },
-}
 
 const pick = (cfg, ...keys) => {
   for (const k of keys) if (cfg[k] != null) return cfg[k]
@@ -192,10 +185,6 @@ export function parseArchitecture(cfg) {
   }
 }
 
-/** Which experts are lit for a batch of B tokens, per layer. */
-export function litExperts(B, nExperts, topk) {
-  return Math.round(nExperts * (1 - Math.pow(1 - topk / nExperts, B)))
-}
 
 /**
  * Derived metrics for comparing architectures side by side. Everything here comes
@@ -255,91 +244,4 @@ export function summarise(arch, cfg) {
     nMtp: meta.nMtp,
     blocks: blocks.length,
   }
-}
-
-/**
- * Collapses a parsed architecture into its *unique* structure plus multiplicities.
- *
- * This is what makes a model fit on one screen. GLM-5.2 has 19,767 weight
- * matrices, but only about a dozen distinct ones: a 78-layer model is not 78
- * things, it is one thing 78 times, and a 256-expert layer is one expert 256
- * times. Drawing the repeats is what made every previous attempt a slab.
- *
- * Returns a shallow tree of stages, where a stage is either a single tensor or a
- * group with a `count`. Groups nest, so "MoE layer ×75" contains "expert ×256".
- */
-export function collapseArchitecture(cfg) {
-  const arch = parseArchitecture(cfg)
-  const { meta, layers, blocks } = arch
-
-  const tensor = (b) => ({
-    kind: 'tensor',
-    role: b.role,
-    name: b.name,
-    dims: b.dims,
-    params: b.params,
-    note: b.note,
-  })
-
-  /** All blocks belonging to one representative layer, minus the expert spam. */
-  const forLayer = (idx) => blocks.filter((b) => b.layer === idx)
-
-  const denseIdx = layers.find((l) => l.dense)?.index
-  const moeIdx = layers.find((l) => !l.dense)?.index
-  const indexedIdx = layers.find((l) => l.fullIndexer)?.index
-
-  const stages = []
-  const embed = blocks.find((b) => b.role === 'embedding')
-  if (embed) stages.push(tensor(embed))
-
-  const layerGroup = (idx, count, label) => {
-    if (idx == null || !count) return null
-    const parts = []
-    const own = forLayer(idx)
-    for (const b of own) {
-      if (b.role === 'routed_expert') continue
-      parts.push(tensor(b))
-    }
-    // The experts collapse into a single group with its own multiplicity.
-    const anExpert = own.find((b) => b.role === 'routed_expert')
-    if (anExpert) {
-      parts.push({
-        kind: 'group',
-        label: 'expert',
-        count: meta.nExperts,
-        active: meta.topk,
-        parts: [tensor({ ...anExpert, name: 'expert' })],
-      })
-    }
-    return { kind: 'group', label, count, parts }
-  }
-
-  // A layer that owns an indexer differs from one that reuses a neighbour's, so
-  // they are genuinely distinct kinds and get separate groups.
-  const denseCount = layers.filter((l) => l.dense).length
-  const moeWithIdx = layers.filter((l) => !l.dense && l.fullIndexer).length
-  const moeWithout = layers.filter((l) => !l.dense && !l.fullIndexer).length
-
-  const dense = layerGroup(denseIdx, denseCount, meta.isMoE ? 'dense layer' : 'layer')
-  if (dense) stages.push(dense)
-
-  if (meta.isMoE) {
-    if (moeWithIdx) {
-      const idx = layers.find((l) => !l.dense && l.fullIndexer)?.index
-      stages.push(layerGroup(idx, moeWithIdx, 'MoE layer, own indexer'))
-    }
-    if (moeWithout) {
-      const idx = layers.find((l) => !l.dense && !l.fullIndexer)?.index
-      stages.push(layerGroup(idx, moeWithout, moeWithIdx ? 'MoE layer, shared indexer' : 'MoE layer'))
-    }
-  } else if (denseCount < layers.length) {
-    stages.push(layerGroup(moeIdx ?? 1, layers.length - denseCount, 'layer'))
-  }
-
-  const mtp = blocks.find((b) => b.role === 'mtp')
-  if (mtp) stages.push(tensor(mtp))
-  const head = blocks.find((b) => b.role === 'lm_head')
-  if (head) stages.push(tensor(head))
-
-  return { meta, stages, totalBlocks: blocks.length }
 }

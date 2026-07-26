@@ -76,10 +76,19 @@ anything that repeats. Preferred over sized-rectangle or 3D views because the bo
   Build the specs from a config.json so they can't drift.
 - Composite boxes `expand` into their own diagram; breadcrumbs navigate back. This is how one
   language covers the whole range from a single multiply to an entire model.
-- Primitive boxes can carry `figure`, linking to the interactive figure that teaches that
-  operation. The diagram is the map; the teaching figures are the destinations.
+- **Everything decomposes to scalar arithmetic.** A `Linear` opens into a MatMul against a stored
+  weight; the MatMul opens into multiplies and a reduction; `SoftMax` opens into row-max, subtract,
+  exp, row-sum, divide. The leaves are elementwise ops and reductions with their operation counts.
+- **Every named matrix says what it is for.** `q_b_proj`, `o_proj`, `W_gate` and the rest carry a
+  `why` string, shown when you hover or focus the box. Explaining the purpose is as important as
+  showing the shape.
+- Residual connections route out to the side with `via` and `residual: true`, so it is visible
+  where they come from. Drawn on the main column they are invisible.
+- Primitive specs are registered by shape (`lin-6144-2048`), so they are generated once and reused
+  wherever that shape appears.
 - Colours follow the paper's palette: purple MatMul, green SoftMax, pink Mask, yellow Scale/Concat,
-  grey-green Linear.
+  grey-green Linear. Leaf arithmetic is peach (elementwise) and teal (reductions); stored weights are
+  dashed, because they are parameters rather than operations.
 
 ## Figures
 
