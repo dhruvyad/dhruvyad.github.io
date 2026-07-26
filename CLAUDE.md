@@ -63,6 +63,24 @@ instance.
 - Tools can be richer than articles need to be: comparison across several inputs, file upload,
   pasting your own data. Don't push that complexity into the article embed.
 
+## The diagram language
+
+The primary way to draw architecture is the **box-and-arrow dataflow diagram** from the
+transformer paper: named operation boxes, arrows bottom to top, stacked cards with a ×N badge for
+anything that repeats. Preferred over sized-rectangle or 3D views because the boxes carry meaning —
+`SoftMax` says what happens, a rectangle only says what shape.
+
+- `src/components/BlockDiagram.svelte` renders any spec; `figures/diagrams.js` holds the specs.
+  **Adding a diagram is adding data, not code.**
+- Every box carries the model's **real numbers** — shapes, parameters, FLOPs — never symbols.
+  Build the specs from a config.json so they can't drift.
+- Composite boxes `expand` into their own diagram; breadcrumbs navigate back. This is how one
+  language covers the whole range from a single multiply to an entire model.
+- Primitive boxes can carry `figure`, linking to the interactive figure that teaches that
+  operation. The diagram is the map; the teaching figures are the destinations.
+- Colours follow the paper's palette: purple MatMul, green SoftMax, pink Mask, yellow Scale/Concat,
+  grey-green Linear.
+
 ## Figures
 
 - **Interactive beats static.** Where a static table would do, prefer a figure the reader can

@@ -247,6 +247,41 @@
         footnote.
       </p>
 
+      <h2>The map</h2>
+
+      <p>
+        There is already a standard way to draw all of this, and it is worth adopting rather than
+        inventing something: the box-and-arrow dataflow diagram from the original
+        paper<d-cite key="vaswani2017attention"></d-cite>. Named operations, arrows for tensors,
+        stacked cards for anything that repeats.
+      </p>
+
+      <p>
+        It has one property the sized-rectangle view lacks: the boxes carry <em>meaning</em>.
+        A rectangle tells you a matrix's shape; a box labelled <code>SoftMax</code> tells you what
+        happens. And it nests without effort, because a box called “Scaled Dot-Product Attention” is
+        exactly a diagram of five smaller boxes. So the same picture works at every level, from the
+        whole network down to a single multiply — and every box can carry the real numbers instead of
+        symbols.
+      </p>
+
+      <d-figure id="diagram">
+        <div id="diagram-target" class="figure-target"></div>
+        <figcaption>
+          Mixtral-8x7B, drawn from its own <code>config.json</code>. Start at the model and click
+          down: the block, then multi-head attention, then a single head, then the mixture of
+          experts. Shapes, parameter counts and FLOPs on every box are the model's own. The two
+          <code>MatMul</code> boxes at the bottom of a head link back to the figures above — that is
+          where this diagram runs out and the arithmetic begins.
+        </figcaption>
+      </d-figure>
+
+      <p>
+        This is the frame the rest of the series will hang on. It reaches all the way down to the
+        operations we started with, and all the way up to a model — with nothing in between that
+        needs a different way of drawing it.
+      </p>
+
       <h2>What comes next</h2>
 
       <p>
