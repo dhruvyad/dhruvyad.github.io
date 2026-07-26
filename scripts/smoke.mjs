@@ -147,15 +147,9 @@ const PAGE_CHECKS = `(() => {
     postLinks: [...document.querySelectorAll('#post-list a')].map((a) => a.getAttribute('href')),
     toolLinks: [...document.querySelectorAll('#tool-list a')].map((a) => a.getAttribute('href')),
     toolMounted: !!document.querySelector('#app')?.childElementCount,
-    stages: document.querySelectorAll('.stage canvas').length,
-    triangles: Math.max(
-      0,
-      ...[...document.querySelectorAll('[data-triangles]')].map((e) => +e.dataset.triangles || 0),
-    ),
-    blocks: Math.max(
-      0,
-      ...[...document.querySelectorAll('[data-blocks]')].map((e) => +e.dataset.blocks || 0),
-    ),
+    diagrams: document.querySelectorAll('.figure-controls .crumb').length,
+    diagramNodes: document.querySelectorAll('g.node').length,
+    diagramEdges: document.querySelectorAll('path.edge').length,
   };
 })()`
 
@@ -175,11 +169,7 @@ const chrome = spawn(
     `--remote-debugging-port=${DEBUG_PORT}`,
     '--no-first-run',
     '--no-default-browser-check',
-    // Software WebGL, so the 3D figures actually render headlessly. Without
-    // these the canvas exists but three.js can't get a context, and the figure
-    // silently falls back.
-    '--use-angle=swiftshader',
-    '--enable-unsafe-swiftshader',
+    '--disable-gpu',
     '--hide-scrollbars',
     '--window-size=1280,900',
     // CI runners lack the namespaces Chrome's sandbox needs.
@@ -292,11 +282,11 @@ try {
       )
     } else if (page.kind === 'tool') {
       if (!r.toolMounted) note(page.name, 'tool app rendered nothing')
-      if (r.stages === 0) note(page.name, 'no 3D stage on the page')
-      if (r.triangles === 0) note(page.name, '3D view drew no geometry')
+      if (r.diagramNodes === 0) note(page.name, 'no diagram boxes rendered')
+      if (r.diagramEdges === 0) note(page.name, 'no diagram edges rendered')
       console.log(
-        `  ${page.name}\n    ${r.stages} 3D stage(s) · ${r.triangles.toLocaleString()} triangles · ` +
-          `${r.blocks.toLocaleString()} blocks`,
+        `  ${page.name}\n    ${r.diagramNodes} boxes · ${r.diagramEdges} edges · ` +
+          `${r.diagrams} breadcrumb(s)`,
       )
     } else {
       if (r.postLinks.length === 0) note(page.name, 'post list is empty')

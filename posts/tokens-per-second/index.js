@@ -1,6 +1,8 @@
-import { mountFigure, mountFigureLazy } from '../../src/lib/figure.js'
+import { mountFigure } from '../../src/lib/figure.js'
 import { installGlossary } from '../../src/lib/glossary.js'
 import { TERMS } from '../../src/glossary/terms.js'
+import BlockDiagram from '../../src/components/BlockDiagram.svelte'
+import { buildDiagrams } from '../../src/lib/diagrams.js'
 import glmConfig from './data/glm-5.2-config.json'
 import DecodeBudget from './figures/DecodeBudget.svelte'
 import ExpertTraffic from './figures/ExpertTraffic.svelte'
@@ -17,13 +19,9 @@ installGlossary({
   observe: document.querySelector('d-appendix'),
 })
 
-// Same component the model-explorer tool uses, fed this article's subject. Loaded
-// lazily so three.js only downloads for readers who scroll this far.
-mountFigureLazy('architecture', () => import('../../src/components/Model3D.svelte'), {
-  config: glmConfig,
-  label: 'GLM-5.2',
-  height: 470,
-})
+// The same diagram component the model-explorer tool uses, fed this article's
+// subject. Walks from the whole network down to a single matrix multiply.
+mountFigure('architecture', BlockDiagram, { diagrams: buildDiagrams(glmConfig) })
 mountFigure('decode-budget', DecodeBudget)
 mountFigure('expert-traffic', ExpertTraffic)
 mountFigure('memory-budget', MemoryBudget)

@@ -1,7 +1,7 @@
 <script>
   /** Thin wrapper: build the specs from a real config and hand them to the renderer. */
   import BlockDiagram from '../../../src/components/BlockDiagram.svelte'
-  import { buildDiagrams } from './diagrams.js'
+  import { buildDiagrams } from '../../../src/lib/diagrams.js'
   import config from '../data/mixtral-8x7b.json'
 
   let { start = 'model' } = $props()

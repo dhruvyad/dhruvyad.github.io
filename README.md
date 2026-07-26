@@ -47,7 +47,7 @@ puts a modern build under it.
 | | |
 |---|---|
 | Components | distill's `template.v2.js`, vendored into `public/vendor/` |
-| Figures | Svelte 5 + D3; three.js for the 3D architecture view |
+| Figures | Svelte 5 + D3; a shared block-diagram renderer for architecture |
 | Build | Vite, multi-page (one HTML entry per post and per tool) |
 | Deploy | GitHub Actions → GitHub Pages |
 
@@ -66,10 +66,10 @@ Both lists on the homepage are generated at build time: articles from each post'
 
 ## Tools
 
-`tools/model-explorer/` renders any Hugging Face `config.json` as an orbitable 3D model —
-`src/lib/architecture.js` parses the config into sized, positioned weight blocks, and
-`src/components/Model3D.svelte` draws them. The same component is embedded in the article; the tool
-adds preset models, file/paste loading, and a comparison table.
+`tools/model-explorer/` renders any Hugging Face `config.json` as a dataflow block diagram —
+`src/lib/diagrams.js` turns the config into diagram specs and `src/components/BlockDiagram.svelte`
+draws them, with composite boxes opening into their own diagram. The same component is embedded in
+both articles; the tool adds preset models, file/paste loading, and a comparison table.
 
 The parser handles dense and sparse architectures, MLA and GQA/MHA attention, DeepSeek-style sparse
 attention indexers and MTP heads, and reproduces published parameter counts within about 1% across

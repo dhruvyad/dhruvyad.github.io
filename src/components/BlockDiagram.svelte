@@ -32,20 +32,18 @@
   }
 
   const COL = 132
-  const ROW = 74
-  const META_BELOW = 26
   const BOXW = 108
   const BOXH = 38
 
   const width = 704
   const rows = $derived(Math.max(...spec.nodes.map((n) => n.row)) + 1)
-  const height = $derived(rows * ROW + 46 + extraRows * ROW)
+  /** Taller rows when any of them carries its metadata underneath. */
+  const ROW = $derived(anyMetaBelow ? 98 : 74)
+  const height = $derived(rows * ROW + 52)
 
   /** Grid → pixels. Row 0 is the bottom, so signal flows upward. */
   const cx = $derived((n) => width / 2 + (n.col ?? 0) * COL)
-  const cy = $derived((n) => height - 28 - (n.row ?? 0) * ROW)
-  // Rows carrying metadata underneath need a little more room.
-  const extraRows = $derived([...rowCount.values()].some((c) => c > 1) ? 0.4 : 0)
+  const cy = $derived((n) => height - 30 - (n.row ?? 0) * ROW)
   const boxW = (n) => n.w ?? BOXW
 
   const byId = $derived(new Map(spec.nodes.map((n) => [n.id, n])))
@@ -59,7 +57,10 @@
     }
     return c
   })
-  const metaBelow = (n) => (rowCount.get(n.row) ?? 1) > 1
+  const metaBelow = (n) => (rowCount.get(n.row) ?? 1) > 1 && (n.shape || n.cost)
+  const anyMetaBelow = $derived(
+    spec.nodes.some((n) => (rowCount.get(n.row) ?? 1) > 1 && (n.shape || n.cost)),
+  )
 
   /**
    * Orthogonal route from one node's top to another's bottom: straight up when
@@ -72,7 +73,8 @@
     const x2 = cx(b)
     const y2 = cy(b) + BOXH / 2
     if (Math.abs(x1 - x2) < 2) return `M${x1},${y1} L${x2},${y2}`
-    const mid = y2 + 22
+    // Clear the metadata band under the target, or the wire runs through the text.
+    const mid = y2 + (metaBelow(b) ? 38 : 22)
     return `M${x1},${y1} L${x1},${mid} L${x2},${mid} L${x2},${y2}`
   }
 
@@ -241,6 +243,15 @@
     text-anchor: middle;
     fill: rgba(0, 0, 0, 0.45);
     font-family: 'SF Mono', Menlo, Consolas, monospace;
+  }
+
+  .meta,
+  .tnote {
+    /* A white halo so a wire passing behind the label doesn't cut through it. */
+    paint-order: stroke;
+    stroke: #fff;
+    stroke-width: 3px;
+    stroke-linejoin: round;
   }
 
   .meta {

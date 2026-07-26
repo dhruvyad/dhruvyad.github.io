@@ -3,11 +3,15 @@
    * Model explorer: load one or more Hugging Face config.json files and compare
    * their architectures, in 3D and in a diff table.
    *
-   * The 3D view is the same component the articles embed — see
-   * src/components/Model3D.svelte.
+   * The diagrams are the same component the articles embed — see
+   * src/components/BlockDiagram.svelte. Every box carries the model's own
+   * shapes, parameter counts and FLOPs, and composite boxes open into their own
+   * diagram, so any architecture the parser recognises can be walked from the
+   * whole network down to a single matrix multiply.
    */
-  import Model3D from '../../src/components/Model3D.svelte'
+  import BlockDiagram from '../../src/components/BlockDiagram.svelte'
   import { parseArchitecture, summarise } from '../../src/lib/architecture.js'
+  import { buildDiagrams } from '../../src/lib/diagrams.js'
 
   import glm52 from './data/glm-5.2.json'
   import deepseekV3 from './data/deepseek-v3.json'
@@ -155,7 +159,7 @@
 {#each rows as r (r.id)}
   <section class="viewer">
     <h3>{r.label} <span class="sub">{r.s.name}</span></h3>
-    <Model3D config={r.config} label={r.label} height={r.id === rows[0].id ? 460 : 340} />
+    <BlockDiagram diagrams={buildDiagrams(r.config)} />
   </section>
 {/each}
 

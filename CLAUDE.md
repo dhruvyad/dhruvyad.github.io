@@ -85,14 +85,12 @@ anything that repeats. Preferred over sized-rectangle or 3D views because the bo
 
 - **Interactive beats static.** Where a static table would do, prefer a figure the reader can
   manipulate — clickable parts, sliders over the parameters that actually matter.
-- **Prefer 3D and spatial layouts for things that are actually spatial.** An architecture is a
-  structure, so draw it as one: orbit, zoom, click into it. A stack of bars summarising the same
-  information is much weaker. `src/components/Model3D.svelte` is the example — three.js, instanced
-  geometry, blocks sized by real matrix dimensions.
+- **Architecture is drawn as a block diagram** (see above), not in 3D. A 3D instanced view was
+  tried and abandoned: it looked impressive, showed less, and the boxes carried no meaning.
 - **Drive visualisations from the source data, not from transcribed constants.** The 3D view parses
   a real `config.json`; that is what makes it generalise to other models and keeps it honest.
-- Load heavy dependencies lazily. `mountFigureLazy` defers three.js (~157 kB gzip) until the reader
-  scrolls to the figure.
+- Load heavy dependencies lazily where any remain — `mountFigureLazy` defers a module until the
+  reader scrolls to the figure.
 - **Attach real metrics to parts of a diagram.** If a diagram shows an architecture, clicking a
   component should surface its cost: parameters, FLOPs, bytes read, share of the whole.
 - **Colour-code what's active; grey out what isn't.** Sparsity, utilisation and "how much of this
