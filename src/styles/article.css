@@ -34,11 +34,56 @@ d-article d-figure.full-bleed {
   grid-column: screen;
 }
 
-/* Centre a figure's contents when its SVG is narrower than the column it sits in. */
+/* Figure SVGs align left with the figure's controls and readouts. Add .center to
+   a d-figure to centre its chart in the column instead. */
 d-article d-figure svg,
 d-article d-figure canvas {
   display: block;
-  margin: 0 auto;
+}
+
+d-article d-figure.center svg,
+d-article d-figure.center canvas {
+  margin-inline: auto;
+}
+
+/* Small reference tables — architecture specs, measured numbers. */
+d-article figure.spec-table {
+  margin: 1.5em 0;
+}
+
+d-article figure.spec-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+d-article figure.spec-table th {
+  text-align: left;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(0, 0, 0, 0.5);
+  padding: 0 1em 0.4em 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+d-article figure.spec-table td {
+  padding: 0.35em 1em 0.35em 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+  vertical-align: baseline;
+}
+
+/* Second column carries the number; keep it monospaced and prominent. */
+d-article figure.spec-table td:nth-child(2) {
+  font-family: var(--mono, 'SF Mono', Menlo, Consolas, monospace);
+  white-space: nowrap;
+}
+
+d-article figure.spec-table td:last-child {
+  color: rgba(0, 0, 0, 0.55);
+  font-size: 13px;
 }
 
 d-article d-figure figcaption,
@@ -96,6 +141,65 @@ d-article d-figure > .figure-target:empty {
 
 .figure-controls button:hover {
   background: rgba(0, 0, 0, 0.04);
+}
+
+/* Byline.
+ *
+ * distill auto-inserts its own <d-byline> with four fixed columns — Authors,
+ * Affiliations, Published, DOI — and renders the empty ones as bare headings.
+ * We suppress it and use our own block, which carries authors and both dates
+ * and nothing else. `.base-grid` is distill's own class for participating in
+ * the page grid, so this stays aligned with the text column.
+ */
+d-byline {
+  display: none;
+}
+
+.byline {
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  font-size: 0.8rem;
+  line-height: 1.8em;
+  padding: 1.5rem 0;
+}
+
+.byline dl {
+  grid-column: text;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1em 1.5em;
+  margin: 0;
+}
+
+@media (min-width: 768px) {
+  .byline dl {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0 1.5em;
+  }
+}
+
+.byline dt {
+  font-size: 0.6rem;
+  font-weight: 400;
+  color: rgba(0, 0, 0, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 0;
+}
+
+.byline dd {
+  margin: 0;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.8);
+}
+
+.byline dd a {
+  color: rgba(0, 0, 0, 0.8);
+  text-decoration: none;
+  border-bottom: none;
+}
+
+.byline dd a:hover {
+  text-decoration: underline;
 }
 
 /* A back-link to the index, sitting above the title.

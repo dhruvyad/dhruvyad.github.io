@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Where Tokens Per Second Comes From — Notes</title>
+
+    <script src="/vendor/template.v2.js"></script>
+    <link rel="stylesheet" href="/vendor/katex/katex.min.css" />
+    <link rel="stylesheet" href="/src/styles/article.css" />
+  </head>
+
+  <body>
+    <d-front-matter>
+      <script type="text/json">
+        {
+          "title": "Where Tokens Per Second Comes From",
+          "description": "Deriving inference throughput from first principles, using GLM-5.2's published weights as the worked example.",
+          "published": "2026-07-26",
+          "updated": "2026-07-26",
+          "tags": ["inference", "systems", "gpu"],
+          "authors": [
+            {
+              "author": "Dhruv Yadav",
+              "authorURL": "https://github.com/dhruvyad"
+            },
+            {
+              "author": "Claude Opus 5"
+            }
+          ],
+          "katex": {
+            "delimiters": [
+              { "left": "$", "right": "$", "display": false },
+              { "left": "$$", "right": "$$", "display": true }
+            ]
+          }
+        }
+      </script>
+    </d-front-matter>
+
+    <d-title>
+      <a class="home-link" href="../../">← Notes</a>
+      <h1>Where Tokens Per Second Comes From</h1>
+      <p>
+        "How many tokens per second?" is not one number. It is the answer to an optimisation problem
+        whose constraints are a memory bus, a cache hierarchy, and how many strangers you are willing
+        to make wait. Here is the whole calculation, worked out on a real 753-billion-parameter model.
+      </p>
+    </d-title>
+
+    <!-- Replaces distill's auto-inserted d-byline, which also renders empty
+         Affiliations and DOI columns. See src/styles/article.css. -->
+    <div class="base-grid byline">
+      <dl>
+        <div>
+          <dt>Authors</dt>
+          <dd><a href="https://github.com/dhruvyad">Dhruv Yadav</a></dd>
+          <dd>Claude Opus 5</dd>
+        </div>
+        <div>
+          <dt>Published</dt>
+          <dd><time datetime="2026-07-26">26 July 2026</time></dd>
+        </div>
+        <div>
+          <dt>Last updated</dt>
+          <dd><time datetime="2026-07-26">26 July 2026</time></dd>
+        </div>
+      </dl>
+    </div>
+
+    <d-article>
+      <p>
+        Ask how fast a model runs and you will get a number with no units attached to it — no batch
+        size, no context length, no hardware, no precision. That number is nearly meaningless,
+        because throughput and latency in a language model trade against each other so sharply that
+        the same weights on the same GPUs can serve 39 tokens per second per user or 947, depending
+        on choices made by whoever configured the server.
+      </p>
+
+      <p>
+        This article derives that number from first principles. Rather than reason about a
+        hypothetical model, I use <b>GLM-5.2</b>, Zhipu AI's 753B-parameter open-weights
+        model<d-cite key="glm5"></d-cite> — every architectural constant below comes from its
+        published <code>config.json</code>, and the parameter accounting is checked against the
+        actual size of its weight files.<d-footnote>
+          The 282 safetensors shards total 1,506,667,387,408 bytes. At two bytes per bf16 parameter
+          that is 753.33B parameters, and the analytic budget in the table below reproduces it to
+          within 0.006% — the residual is layernorm and bias vectors I did not bother counting.
+        </d-footnote>
+        Choosing a model whose weights you can actually inspect matters, because the interesting
+        parts of this calculation are all architecture-specific.
+      </p>
+
+      <h2>One equation, two regimes</h2>
+
+      <p>
+        Every inference performance question reduces to a single question: for one step of work, is
+        the machine waiting on arithmetic or on memory? A step needs to read some number of bytes
+        from memory and perform some number of floating-point operations, and those happen
+        concurrently, so the step takes as long as the slower of the two:
+      </p>
+
+      <d-math block>
+        t_{\text{step}} = \max\!\left(\underbrace{\frac{\text{bytes}}{\mathit{BW}}}_{\text{memory}},\;
+        \underbrace{\frac{\text{FLOPs}}{C}}_{\text{compute}}\right)
+      </d-math>
+
+      <p>
+        where $\mathit{BW}$ is memory bandwidth and $C$ is compute throughput. This is the roofline
+        model<d-cite key="williams2009roofline"></d-cite>, and the quantity that decides which term
+        wins is <b>arithmetic intensity</b> — FLOPs performed per byte moved:
+      </p>
+
+      <d-math block>
+        I = \frac{\text{FLOPs}}{\text{bytes}}, \qquad
+        I_{\text{crit}} = \frac{C}{\mathit{BW}}
+      </d-math>
+
+      <p>
+        $I_{\text{crit}}$ is a property of the hardware alone, sometimes called its <b>machine
+        balance</b>. An H200 delivers roughly 989 bf16 TFLOP/s against 4.8 TB/s of HBM3e bandwidth,
+        so $I_{\text{crit}} \approx 206$ FLOP/byte. Any kernel doing fewer than 206 operations per
+        byte it touches leaves the tensor cores idle waiting for memory. Most of what an LLM does
+        during generation is nowhere close.
+      </p>
+
+      <h3>Prefill and decode are different machines</h3>
+
+      <p>
+        Inference splits into two phases with opposite bottlenecks, which is the single most
+        important structural fact about serving.<d-cite key="pope2022efficiently"></d-cite>
+      </p>
+
+      <p>
+        <b>Prefill</b> processes the whole prompt at once. With $S$ prompt tokens, the model reads
+        its weights once and does $S$ tokens' worth of arithmetic against them — so arithmetic
+        intensity scales with $S$, and for any realistic prompt prefill is firmly
+        <em>compute-bound</em>. It sets time-to-first-token (TTFT).
+      </p>
+
+      <p>
+        <b>Decode</b> generates one token per sequence per step. The model reads all of its active
+        weights to produce a single token per sequence: a few dozen gigabytes moved to do a few
+        gigaflops of work. Decode is violently <em>memory-bound</em>, and it sets time-per-output-token
+        (TPOT), which is what a user experiences as speed.
+      </p>
+
+      <p>
+        These two phases want different hardware and different batching, which is why production
+        stacks increasingly run them on separate GPU pools entirely — prefill/decode
+        disaggregation. Everything that follows is about decode, because that is what "tokens per
+        second" usually means.
+      </p>
+
+      <h2>What GLM-5.2 actually is</h2>
+
+      <p>
+        Before counting bytes, the architecture. GLM-5.2 is a sparse mixture-of-experts model with
+        two features that change the arithmetic substantially — multi-head latent attention (MLA),
+        borrowed from DeepSeek-V2<d-cite key="deepseekv2"></d-cite>, and DeepSeek Sparse Attention
+        (DSA) with a cross-layer-shared indexer.
+      </p>
+
+      <figure class="spec-table">
+        <table>
+          <tr><td>Total parameters</td><td>753.3B</td><td>1403 GiB in bf16</td></tr>
+          <tr><td>Active per token</td><td>40.3B</td><td>5.4% of the model</td></tr>
+          <tr><td>Layers</td><td>78</td><td>3 dense, 75 MoE</td></tr>
+          <tr><td>Hidden size</td><td>6144</td><td></td></tr>
+          <tr><td>Experts</td><td>256 routed + 1 shared</td><td>top-8 per token</td></tr>
+          <tr><td>Attention</td><td>MLA, 64 heads</td><td>512-dim latent + 64-dim RoPE</td></tr>
+          <tr><td>Sparse attention</td><td>DSA, top-2048</td><td>22 indexers, not 78</td></tr>
+          <tr><td>Context</td><td>1,048,576</td><td></td></tr>
+          <tr><td>MTP heads</td><td>1</td><td>for speculative decoding</td></tr>
+        </table>
+        <figcaption>
+          GLM-5.2 as its weights describe it. The parameters live almost entirely in the MoE blocks:
+          97.9% of the model is expert weights, and the 78 attention blocks are just 13.0B
+          parameters between them.
+        </figcaption>
+      </figure>
+
+      <p>
+        The ratio in the second row is the reason a 753B model is servable at all. Each token is
+        routed to 8 of 256 experts per layer, so only about 40B parameters participate in producing
+        it. <b>Total parameters determine what you must store; active parameters determine what you
+        must read.</b> Those are different constraints against different hardware limits — capacity
+        versus bandwidth — and conflating them is the most common error in back-of-envelope
+        estimates.
+      </p>
+
+      <h2>Counting the bytes</h2>
+
+      <p>
+        For one decode step at batch size $B$ and context length $S$, three things cross the memory
+        bus.
+      </p>
+
+      <p>
+        <b>Weights.</b> The batch-independent part — attention blocks, the 3 dense MLPs, the shared
+        expert, routers, the unembedding — comes to 17.7B parameters. On top of that, every routed
+        expert that any token in the batch selects must be read.
+      </p>
+
+      <p>
+        <b>KV cache.</b> Attention needs the keys and values of previous tokens. MLA does not store
+        keys and values per head; it stores one compressed latent per token per layer, of dimension
+        $d_c + d_{\text{rope}} = 512 + 64 = 576$. In bf16 that is
+      </p>
+
+      <d-math block>
+        576 \times 2\ \text{bytes} \times 78\ \text{layers} = 87.75\ \text{KiB per token}
+      </d-math>
+
+      <p>
+        against 4.88 MiB per token for the same shapes stored as plain multi-head attention — a
+        57-fold reduction, and the entire reason a million-token context is tractable. DSA narrows
+        the read further: the indexer picks the 2048 most relevant tokens per query, so attention
+        reads 2048 tokens' latents regardless of whether the context is 8K or 1M.
+      </p>
+
+      <p>
+        <b>Indexer state.</b> The thing that picks those 2048 tokens has to look at all $S$ of them,
+        reading a 128-dimensional index key per token. This is the cost that sparse attention adds
+        back, and we will return to it.
+      </p>
+
+      <p>
+        Put those three terms together, divide by aggregate bandwidth, and you have a decode step.
+        The figure below is that calculation, live:
+      </p>
+
+      <d-figure id="decode-budget" class="wide">
+        <div id="decode-budget-target" class="figure-target"></div>
+        <figcaption>
+          The decode step budget for GLM-5.2. Weights dominate at small batch; KV and indexer
+          traffic take over as batch and context grow. MBU is memory-bandwidth utilisation — the
+          fraction of theoretical peak the kernels actually achieve, which is where reality enters.
+          Note that the step stays memory-bound across the entire range.
+        </figcaption>
+      </d-figure>
+
+      <p>
+        At $B=1$, FP8 weights, 8K context, on eight H200s: 40.5 GB moved, 1.06 ms per step, 947
+        tokens per second. Arithmetic intensity is 2.3 FLOP/byte against a machine balance of 206 —
+        the tensor cores are idle 99% of the time. This is not a defect in the implementation. It is
+        what generating one token at a time means.
+      </p>
+
+      <h2>Batching, and why it is not free for MoE</h2>
+
+      <p>
+        The standard fix for a memory-bound kernel is batching: read the weights once, amortise them
+        over many tokens. For a dense model this works beautifully — weight traffic is constant in
+        $B$, so intensity grows linearly and you march toward the compute roof.
+      </p>
+
+      <p>
+        For a mixture of experts it works much less well, for a reason that is easy to miss. Each
+        token independently selects 8 experts. Two tokens will usually not select the same 8. As the
+        batch grows, the <em>union</em> of experts the batch touches grows too, and so does the
+        weight traffic. If routing were uniform and independent, the expected number of distinct
+        experts touched in a layer is
+      </p>
+
+      <d-math block>
+        \mathbb{E}[\text{experts}] = N\left(1 - \left(1 - \tfrac{k}{N}\right)^{B}\right)
+      </d-math>
+
+      <p>
+        with $N = 256$ and $k = 8$.<d-footnote>
+          Real routers are skewed — some experts are far more popular than others — which makes this
+          an optimistic estimate. Skew means fewer distinct experts at a given batch size but worse
+          load balance across GPUs under expert parallelism, so it moves the cost rather than
+          removing it.
+        </d-footnote>
+        That function saturates fast, and the consequence is stark:
+      </p>
+
+      <d-figure id="expert-traffic" class="wide">
+        <div id="expert-traffic-target" class="figure-target"></div>
+        <figcaption>
+          Weight bytes per decode step as a function of batch size. A dense 40B model would sit on
+          the flat dashed line. GLM-5.2 climbs toward the full 753B: by batch 128 the batch is
+          touching 252 of 256 experts per layer, so the server is reading essentially the whole
+          model to produce every step.
+        </figcaption>
+      </d-figure>
+
+      <p>
+        Between batch 1 and batch 128, routed weight traffic rises about 32-fold. Per-token
+        efficiency still improves — 40.3B parameters read per token becomes 5.7B — but nothing like
+        the 128× a dense model would give you. And once every expert is being touched, extra batch
+        genuinely is free, which is why MoE serving throughput curves have a distinct knee.
+      </p>
+
+      <p>
+        This is also why GLM-5.2 decode never becomes compute-bound. At batch 1024 the arithmetic
+        intensity is still only 97 FLOP/byte, under the H200's 206. A dense model would have crossed
+        into compute-bound territory around batch 200. The MoE stays on the memory roof, which means
+        <b>bandwidth, not FLOPs, is what you are buying</b> when you buy GPUs to serve it.
+      </p>
+
+      <h2>Capacity: DRAM, and what the KV cache does to it</h2>
+
+      <p>
+        Bandwidth sets speed; capacity sets whether you can run at all. HBM — the stacked DRAM
+        beside the GPU die — has to hold weights and KV cache simultaneously, and they compete.
+      </p>
+
+      <p>
+        GLM-5.2 in bf16 is 1403 GiB, which does not fit in eight H200s (1128 GB). In FP8 it is 753
+        GB and fits with about 375 GB to spare for KV. That headroom is the real constraint on
+        concurrency, and at long context it disappears quickly: one million tokens of MLA cache is
+        87.75 GiB per sequence, so those 375 GB hold four such sequences.
+      </p>
+
+      <d-figure id="memory-budget" class="wide">
+        <div id="memory-budget-target" class="figure-target"></div>
+        <figcaption>
+          HBM as a fixed budget. Weights are a fixed cost set by quantisation; KV cache grows with
+          context times batch. Toggle MLA off to see the 57× penalty plain multi-head attention would
+          impose — at which point almost nothing fits.
+        </figcaption>
+      </d-figure>
+
+      <p>
+        Two things follow. First, quantisation buys capacity and bandwidth at once: FP8 halves both
+        the bytes stored and the bytes read, which is why it is nearly universal in production and
+        why NVFP4 is displacing it on Blackwell. Second, KV cache memory must be managed as a
+        dynamic allocation problem, not a static reservation — the insight behind PagedAttention,
+        which treats the cache as pages in a virtual memory system and recovers most of the waste
+        that naive contiguous allocation causes.<d-cite key="kwon2023pagedattention"></d-cite>
+      </p>
+
+      <h2>SRAM, and why FlashAttention had to be invented</h2>
+
+      <p>
+        Everything so far has treated GPU memory as one thing. It is not. There is a hierarchy, and
+        the gap between its levels is where a great deal of inference performance is won.
+      </p>
+
+      <p>
+        On an H100 or H200: HBM is ~80–141 GB at 3.35–4.8 TB/s. The L2 cache is 50 MB, considerably
+        faster. Each of the 132 streaming multiprocessors has 228 KiB of configurable shared
+        memory — SRAM, on the die, roughly an order of magnitude more bandwidth than HBM. Registers
+        are faster still. The rule is the usual one: tiny and fast, or vast and slow.
+      </p>
+
+      <p>
+        Standard attention ignores this. It computes $QK^\top$, writes the resulting $S \times S$
+        score matrix to HBM, reads it back to apply softmax, writes it again, reads it once more to
+        multiply by $V$. The score matrix is $O(S^2)$ and it makes several round trips over the
+        slowest link in the system. At $S = 8192$, one head in one layer is a 134 MB matrix — already
+        larger than the entire L2 cache, and 575 times larger than one SM's shared memory.
+      </p>
+
+      <d-figure id="attention-traffic" class="wide">
+        <div id="attention-traffic-target" class="figure-target"></div>
+        <figcaption>
+          The score matrix against the memory hierarchy, log-log. It crosses every level of on-chip
+          storage almost immediately, then keeps going quadratically. FlashAttention's traffic grows
+          linearly instead, because the matrix is never written down.
+        </figcaption>
+      </d-figure>
+
+      <p>
+        FlashAttention's observation was that attention is memory-bound, not compute-bound, and the
+        fix is not fewer FLOPs but fewer bytes.<d-cite key="dao2022flashattention"></d-cite> It tiles
+        the computation: load a block of queries and a block of keys into SRAM, compute their scores
+        there, accumulate the softmax with a running normaliser so no full row is ever needed at
+        once, and move on. The $S \times S$ matrix never exists in HBM. Only $Q$, $K$, $V$ and the
+        output cross it. Same arithmetic, same numerics — exact attention, not an approximation —
+        with asymptotically less memory traffic.
+      </p>
+
+      <p>
+        The subsequent versions are a case study in tracking hardware. FlashAttention-2 fixed work
+        partitioning and parallelism.<d-cite key="dao2023flashattention2"></d-cite> FlashAttention-3
+        exploited Hopper's asynchrony and FP8.<d-cite key="shah2024flashattention3"></d-cite>
+        FlashAttention-4 targets Blackwell, and its framing is instructive: Blackwell scales
+        <em>asymmetrically</em> — tensor core throughput doubles while shared memory bandwidth and
+        the special-function units that compute exponentials do not. So FA4 emulates $\exp$ with
+        polynomials on the general-purpose FMA units rather than queueing for the SFU, and skips
+        softmax rescaling unless numerical stability actually demands it. It reaches 1613 TFLOP/s on
+        a B200, 71% of peak.<d-cite key="zadouri2026flashattention4"></d-cite> When the bottleneck
+        moves, the kernel has to move with it.
+      </p>
+
+      <h3>The cost FlashAttention does not remove</h3>
+
+      <p>
+        FlashAttention makes attention's <em>memory</em> cost linear. Its <em>compute</em> cost is
+        still $O(S^2)$ — every query still scores against every key. At a million tokens that is
+        unaffordable no matter how efficiently you move the bytes, and it is why GLM-5.2 uses sparse
+        attention.
+      </p>
+
+      <p>
+        DSA puts a small "lightning indexer" in front of attention to pick the top 2048 keys per
+        query, reducing core attention from $O(S^2)$ to $O(Sk)$. But the indexer must score all $S$
+        tokens to choose 2048 of them, so the indexer itself is $O(S^2)$ — and in the naive design it
+        runs at every layer.
+      </p>
+
+      <p>
+        GLM-5.2's answer is that consecutive layers select nearly the same tokens, so most layers
+        need not choose for themselves. A minority of "full" layers run an indexer; the rest reuse
+        the nearest full layer's selection.<d-cite key="bai2026indexcache"></d-cite> This is visible
+        in the checkpoint: only <b>22 of 79 layers carry indexer weights</b>, a 72% reduction, which
+        the model card reports as a 2.9× cut in per-token FLOPs at 1M context.<d-footnote>
+          Counted directly from <code>model.safetensors.index.json</code>: tensors named
+          <code>self_attn.indexer.*</code> appear on 22 layers, and <code>config.json</code>'s
+          <code>indexer_types</code> array labels the rest <code>shared</code>. Independent
+          measurements on a 30B DSA model report 1.82× prefill and 1.48× decode speedups from the
+          same technique.
+        </d-footnote>
+      </p>
+
+      <h2>Speculative decoding: buying tokens with idle tensor cores</h2>
+
+      <p>
+        Return to the central embarrassment of decode: at batch 1, arithmetic intensity is 2.3
+        against a machine balance of 206. The tensor cores are almost entirely idle. Speculative
+        decoding is the trick that spends them.<d-cite key="leviathan2023speculative"></d-cite><d-cite key="chen2023accelerating"></d-cite>
+      </p>
+
+      <p>
+        Draft $k$ tokens cheaply, then run the real model once over all $k+1$ positions <em>in
+        parallel</em> and check which drafts it would have produced anyway. Accepted drafts are free
+        tokens; rejected ones cost only the wasted draft. The verification pass is a prefill-shaped
+        operation over $k+1$ tokens, and for a <em>dense</em> model it costs almost exactly what a
+        single-token step costs — the weights get read once either way. Spare FLOPs become tokens.
+      </p>
+
+      <p>
+        For a sparse mixture of experts the story is more interesting, and it is the same story as
+        batching. Those $k+1$ positions each route independently, so they drag in experts that were
+        not being read. At batch 1 with $k=5$, the six positions touch about 44 experts per layer
+        instead of 8, and the verification step costs roughly <b>3.5×</b> a single-token step —
+        enough to swallow the gain entirely. At batch 64 the server is already reading 222 of 256
+        experts, so those same six positions add almost nothing and verification really is nearly
+        free.
+      </p>
+
+      <p>
+        So speculative decoding on an MoE is not uniformly cheap: it is cheap exactly where the
+        expert weights are already saturated. One asymmetry does work in its favour throughout — the
+        $k+1$ positions of a single sequence share one KV cache, read once and reused, whereas $k+1$
+        <em>separate</em> sequences would each need their own. Speculation buys tokens more cheaply
+        than batching does, just not for free.
+      </p>
+
+      <p>
+        If each drafted token is accepted with probability $\alpha$, independently, the expected
+        number of tokens emitted per verification step is
+      </p>
+
+      <d-math block>
+        \mathbb{E}[\text{tokens}] = \frac{1 - \alpha^{k+1}}{1 - \alpha}
+      </d-math>
+
+      <p>
+        The $+1$ in the exponent is the bonus token the verifier produces even when every draft is
+        rejected, which is why speculation can never be slower than not speculating, ignoring draft
+        cost.
+      </p>
+
+      <d-figure id="speculative" class="wide">
+        <div id="speculative-target" class="figure-target"></div>
+        <figcaption>
+          Net wall-clock speedup, with the verification cost taken from the roofline model rather
+          than assumed. Returns diminish sharply in $k$ — each extra drafted token is only reached if
+          every earlier one was accepted, so its contribution is discounted by $\alpha^{k}$ while its
+          cost is not. Drop the serving batch to 1 and the whole curve falls below 1×: at that point
+          the experts pulled in by the extra positions cost more than the accepted tokens are worth.
+        </figcaption>
+      </d-figure>
+
+      <p>
+        Where do drafts come from? GLM-5.2 ships a <b>multi-token prediction</b> head — a single
+        extra transformer layer trained to predict the next token from the main model's hidden
+        state, as in DeepSeek-V3<d-cite key="deepseekv3"></d-cite>. Because it shares the backbone's
+        representations, its acceptance rate is high, and the model card reports GLM-5.2's MTP layer
+        was improved specifically to increase accepted length by up to 20% over GLM-5.1. Serving
+        stacks iterate the single head to draft several tokens: SGLang's low-latency preset for this
+        model runs 5 speculative steps to produce 6 draft tokens.<d-cite key="sglangglm52"></d-cite>
+      </p>
+
+      <h2>From the roofline down to reality</h2>
+
+      <p>
+        Everything above is an upper bound. Real servers land below it, and the gap is worth
+        understanding, because it is where engineering effort actually goes.
+      </p>
+
+      <p>
+        The roofline assumes you can saturate HBM. At batch 1 you cannot. The step is a chain of 78
+        layers, each a handful of small matrix multiplications whose operands must be gathered from
+        scattered expert weights; kernel launch overheads and dependency stalls are a large fraction
+        of the time. If the model is split across 8 GPUs by tensor parallelism, every layer needs a
+        collective reduction — 78 layers, two synchronisations each, on the critical path of a step
+        that is supposed to take a millisecond. <b>Memory-bandwidth utilisation</b> (MBU), the
+        fraction of peak bandwidth actually achieved, is the number that captures all of this, and at
+        batch 1 it is often well under 20%.
+      </p>
+
+      <p>
+        Published figures for GLM-5.2 on B300 hardware with NVFP4 weights show the shape of the
+        tradeoff clearly<d-cite key="sglangglm52"></d-cite>:
+      </p>
+
+      <figure class="spec-table">
+        <table>
+          <tr><th>Concurrency</th><th>TTFT</th><th>TPOT</th><th>Per GPU</th></tr>
+          <tr><td>1</td><td>196 ms</td><td>1.86 ms</td><td>459 tok/s</td></tr>
+          <tr><td>256</td><td>3.0 s</td><td>149 ms</td><td>1845 tok/s</td></tr>
+          <tr><td>1024</td><td>6.4 s</td><td>280 ms</td><td>3870 tok/s</td></tr>
+        </table>
+        <figcaption>
+          The same weights on the same hardware. Going from 1 to 1024 concurrent requests multiplies
+          throughput per GPU by 8.4× and per-token latency by 150×. There is no setting that is
+          simply "fast" — there is only a choice about who waits.
+        </figcaption>
+      </figure>
+
+      <p>
+        Both ends of that table are the same machine obeying the same equation. At concurrency 1 you
+        are paying for bandwidth you cannot use; at 1024 you are using all of it and rationing it
+        across a queue. Which one is correct depends entirely on whether you are serving an
+        interactive coding agent or a batch pipeline — and it is why quoting a model's tokens per
+        second without its operating point communicates almost nothing.
+      </p>
+
+      <h2>What to remember</h2>
+
+      <p>
+        Decode is memory-bound: throughput is bytes moved per step divided by bandwidth, and almost
+        nothing else. For a mixture of experts, the bytes are the active parameters at batch 1 but
+        creep toward the <em>full</em> parameter count as batching pulls in more experts, so per-user
+        speed falls much faster than a dense model's would. The KV cache competes with the weights
+        for capacity, and architecture choices like MLA change that budget by more than an order of
+        magnitude. FlashAttention exists because the memory hierarchy is steep and the attention
+        score matrix should never touch its slowest level; sparse attention exists because
+        FlashAttention fixes the bytes but not the $O(S^2)$ arithmetic. Speculative decoding works
+        because memory-bound decode leaves the tensor cores idle, and idle FLOPs can be spent
+        guessing.
+      </p>
+
+      <p>
+        Do the arithmetic before believing a benchmark. It is only a division, and it will tell you
+        within a factor of two what any configuration can possibly do — which is usually enough to
+        know whether a reported number is impressive or merely unspecified.
+      </p>
+    </d-article>
+
+    <d-appendix>
+      <d-footnote-list></d-footnote-list>
+      <d-citation-list></d-citation-list>
+    </d-appendix>
+
+    <d-bibliography src="bibliography.bib"></d-bibliography>
+
+    <script type="module" src="./index.js"></script>
+  </body>
+</html>

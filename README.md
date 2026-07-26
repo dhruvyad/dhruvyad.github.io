@@ -13,7 +13,7 @@ Every push to `main` rebuilds and republishes the site.
 
 ```bash
 npm install                                   # once
-npm run new-post -- softmax-temperature "Softmax, Slowly"
+npm run new-post -- tokens-per-second "Where Tokens Per Second Comes From"
 npm run dev                                   # http://localhost:5173/
 ```
 
@@ -22,14 +22,18 @@ picks the post up automatically — the index is generated at build time from ea
 `<d-front-matter>` block, so there is no separate list to maintain.
 
 ```
-posts/softmax-temperature/
+posts/tokens-per-second/
 ├── index.html            the article
 ├── index.js              mounts the figures
 ├── bibliography.bib      citation keys for <d-cite>
 └── figures/
-    ├── TemperatureBars.svelte
-    └── softmax.js        maths shared between figures
+    ├── model.js          maths shared by every figure in the post
+    ├── DecodeBudget.svelte
+    └── ...
 ```
+
+Putting a post's maths in one `model.js` that all its figures import is worth the small extra
+file: the figures then cannot disagree with each other, or with the numbers quoted in the prose.
 
 ## How this is built
 
@@ -64,17 +68,17 @@ patches have moved.
 A figure is a Svelte component mounted into a `<d-figure>`:
 
 ```html
-<d-figure id="temperature-bars">
-  <div id="temperature-bars-target" class="figure-target"></div>
+<d-figure id="decode-budget">
+  <div id="decode-budget-target" class="figure-target"></div>
   <figcaption>What the reader should notice.</figcaption>
 </d-figure>
 ```
 
 ```js
 import { mountFigure } from '../../src/lib/figure.js'
-import TemperatureBars from './figures/TemperatureBars.svelte'
+import DecodeBudget from './figures/DecodeBudget.svelte'
 
-mountFigure('temperature-bars', TemperatureBars)
+mountFigure('decode-budget', DecodeBudget)
 ```
 
 `<d-figure>` exposes a visibility state machine, and `src/lib/figure.js` wraps it:
@@ -100,14 +104,23 @@ a class:
 | `wider` | `middle` |
 | `full-bleed` | `screen` |
 
+Charts align left with their controls by default; add `center` to a `d-figure` to centre a narrow
+chart in its column instead.
+
 ### Math, citations, footnotes
 
 - Math: `$inline$`, `$$display$$`, or `<d-math block>` for a standalone equation. KaTeX.
-- Citations: add a BibTeX entry to `bibliography.bib`, then `<d-cite key="hinton2015distilling">`.
+- Citations: add a BibTeX entry to `bibliography.bib`, then `<d-cite key="dao2022flashattention">`.
 - Footnotes: `<d-footnote>…</d-footnote>` inline; they collect into the appendix automatically.
 
 `<d-footnote-list>` and `<d-citation-list>` render their own "Footnotes" / "References" headings —
 don't add your own or you'll get duplicates.
+
+### Byline
+
+distill auto-inserts a `<d-byline>` with four fixed columns, two of which (Affiliations, DOI) render
+as empty headings. `article.css` hides it; each post writes its own `.base-grid .byline` block with
+authors and both dates. The scaffold generates it for you.
 
 ## Checks
 

@@ -215,13 +215,22 @@ try {
     await cdp.send('Page.navigate', { url: page.url }, sessionId)
     await sleep(1200)
 
-    // Scroll the whole page so every lazily-mounted figure gets its `ready` event.
-    await cdp.send(
+    // Walk down the page so every lazily-mounted figure passes through
+    // d-figure's trigger zone. Jumping straight to the bottom does NOT work:
+    // the observer only fires within ~2 viewport heights, so on a long article
+    // every figure in the middle would be skipped and silently report as
+    // unmounted.
+    const { result: pageHeight } = await cdp.send(
       'Runtime.evaluate',
-      { expression: `window.scrollTo(0, document.body.scrollHeight)` },
+      { expression: `document.body.scrollHeight`, returnByValue: true },
       sessionId,
     )
-    await sleep(1500)
+    const step = 600
+    for (let y = 0; y < pageHeight.value + step; y += step) {
+      await cdp.send('Runtime.evaluate', { expression: `window.scrollTo(0, ${y})` }, sessionId)
+      await sleep(90)
+    }
+    await sleep(1200)
 
     const { result } = await cdp.send(
       'Runtime.evaluate',

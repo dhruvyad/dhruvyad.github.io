@@ -43,7 +43,14 @@ if (existsSync(dir)) {
   process.exit(1)
 }
 
-const today = new Date().toISOString().slice(0, 10)
+const now = new Date()
+const today = now.toISOString().slice(0, 10)
+const longDate = now.toLocaleDateString('en-GB', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+})
 
 const indexHtml = `<!doctype html>
 <html lang="en">
@@ -65,11 +72,15 @@ const indexHtml = `<!doctype html>
           "title": "${title}",
           "description": "One sentence on what this article is about.",
           "published": "${today}",
+          "updated": "${today}",
           "tags": [],
           "authors": [
             {
               "author": "Dhruv Yadav",
               "authorURL": "https://github.com/dhruvyad"
+            },
+            {
+              "author": "Claude Opus 5"
             }
           ],
           "katex": {
@@ -87,6 +98,24 @@ const indexHtml = `<!doctype html>
       <h1>${title}</h1>
       <p>The standfirst: what question does this article answer, and why bother?</p>
     </d-title>
+
+    <div class="base-grid byline">
+      <dl>
+        <div>
+          <dt>Authors</dt>
+          <dd><a href="https://github.com/dhruvyad">Dhruv Yadav</a></dd>
+          <dd>Claude Opus 5</dd>
+        </div>
+        <div>
+          <dt>Published</dt>
+          <dd><time datetime="${today}">${longDate}</time></dd>
+        </div>
+        <div>
+          <dt>Last updated</dt>
+          <dd><time datetime="${today}">${longDate}</time></dd>
+        </div>
+      </dl>
+    </div>
 
     <d-article>
       <p>
