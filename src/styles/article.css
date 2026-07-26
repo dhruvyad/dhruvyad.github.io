@@ -98,13 +98,21 @@ d-article d-figure > .figure-target:empty {
   background: rgba(0, 0, 0, 0.04);
 }
 
-/* A back-link to the index, sitting in d-title. */
+/* A back-link to the index, sitting above the title.
+ *
+ * distill's stylesheet only assigns grid columns to `d-title h1` and `d-title p`,
+ * so any other child of d-title inherits `grid-column: auto` and gets
+ * auto-placed into the leftmost margin column — level with the title but
+ * detached from it. Naming the column puts it back in the text flow, and
+ * justify-self keeps the hit area from stretching the full column width.
+ */
 d-title .home-link {
-  display: inline-block;
-  margin-bottom: 1.5rem;
-  font-size: 13px;
+  grid-column: text;
+  justify-self: start;
+  margin-bottom: 1.25rem;
+  font-size: 12px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: rgba(0, 0, 0, 0.5);
   text-decoration: none;
   border-bottom: none;
