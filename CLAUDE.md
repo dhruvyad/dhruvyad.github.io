@@ -82,13 +82,36 @@ anything that repeats. Preferred over sized-rectangle or 3D views because the bo
 - **Every named matrix says what it is for.** `q_b_proj`, `o_proj`, `W_gate` and the rest carry a
   `why` string, shown when you hover or focus the box. Explaining the purpose is as important as
   showing the shape.
-- Residual connections route out to the side with `via` and `residual: true`, so it is visible
-  where they come from. Drawn on the main column they are invisible.
+- **If the real computation has a step, the diagram has a box.** No operation may hide inside a
+  name. This is the standard the diagrams are held to and it is where the errors have been: RoPE,
+  the activation, the router's sigmoid, the MLA latent layernorms and the indexer's ReLU were all
+  missing at some point because a box further up was quietly doing them.
+- **Every non-linearity is visible and green.** `SoftMax`, `SiLU`, `Sigmoid`, `ReLU`, `exp`, `rsqrt`
+  — kind `act` or `softmax`. Green means "the function stops being linear here", and it is worth
+  being able to see at a glance, because those boxes are what stop the surrounding matmuls from
+  collapsing into one matrix. Say so in the spec's `note`.
+- **A value that is produced must visibly be consumed.** Control signals — router indices, gate
+  weights, the indexer's selected keys — are dashed gold (`control: true`) with a label saying what
+  they carry. Top-k emitting an arrow into nothing was a real bug, and it read as one.
+- **Read behaviour from the config, never from the family you assume.** `scoring_func`,
+  `topk_method`, `n_group`/`topk_group`, `norm_topk_prob`, `routed_scaling_factor`, `hidden_act`,
+  `swiglu_limit`, `rope_theta`, `rope_scaling`. Routers differ: DeepSeek and GLM sigmoid then
+  select, Mixtral softmaxes all experts then selects, gpt-oss selects then softmaxes the survivors.
+  Where a variant can only be told by `model_type`, name the source file in a comment.
+- Side routes use `lane` — a clear column to travel up. The wire leaves the source's side (or its
+  top with `out: 'top'`, for a value that fans out) and **arrives on the side of the target**, never
+  underneath it, so two arrows into one box can't be mistaken for one. Residuals (`residual: true`)
+  are dashed blue and drawn leaving the exact point they are taken from.
+- Stacks where only part runs per token carry `active`, greying the dormant cards and captioning the
+  badge `N run`.
 - Primitive specs are registered by shape (`lin-6144-2048`), so they are generated once and reused
-  wherever that shape appears.
-- Colours follow the paper's palette: purple MatMul, green SoftMax, pink Mask, yellow Scale/Concat,
-  grey-green Linear. Leaf arithmetic is peach (elementwise) and teal (reductions); stored weights are
-  dashed, because they are parameters rather than operations.
+  wherever that shape appears. Check for dangling `expand` ids and for specs nothing reaches.
+- Colours follow the paper's palette: purple MatMul, green non-linearities, pink Mask/Top-k, yellow
+  Scale/Concat, grey-green Linear, lavender Norm, pale blue RoPE. Leaf arithmetic is peach
+  (elementwise) and teal (reductions); stored weights are dashed, because they are parameters rather
+  than operations.
+- Known gap, stated rather than papered over: per-head query/key norms (Qwen3's `q_norm`/`k_norm`)
+  are not drawn, because nothing in `config.json` announces them.
 
 ## Figures
 

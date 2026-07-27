@@ -76,6 +76,11 @@ The parser handles dense and sparse architectures, MLA and GQA/MHA attention, De
 attention indexers and MTP heads, and reproduces published parameter counts within about 1% across
 GLM-5.2, DeepSeek-V3, gpt-oss-120b, Mixtral-8x7B and Qwen3-8B.
 
+Behaviour that differs between architectures is read from the config rather than assumed, because
+the differences are the interesting part: three distinct router chains (sigmoid-then-select,
+softmax-then-select, select-then-softmax), gpt-oss's clamped SwiGLU, group-limited expert routing,
+and MLA's decoupled RoPE slice bypassing both the latent layernorm and the up-projection.
+
 ### Why the template is vendored
 
 distill.pub has been dormant since 2021 and the framework unmaintained since 2022, and

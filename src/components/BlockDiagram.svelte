@@ -18,13 +18,18 @@
   const KINDS = {
     linear: { fill: '#e3ebe4', stroke: '#8aa48d' },
     matmul: { fill: '#d7d4ea', stroke: '#8b85bb' },
+    // Green is the non-linearity family: SoftMax and the pointwise activations
+    // are the only places in a transformer where the function stops being linear,
+    // so they get one colour and read as a class.
     softmax: { fill: '#d9ecd5', stroke: '#83ab7c' },
+    act: { fill: '#c6e5bb', stroke: '#5f9152' },
     mask: { fill: '#f4d8de', stroke: '#c4899a' },
     scale: { fill: '#fdf4c9', stroke: '#c9b96a' },
     concat: { fill: '#fdf4c9', stroke: '#c9b96a' },
     add: { fill: '#eeeeee', stroke: '#999' },
     norm: { fill: '#e8e6f3', stroke: '#9d97c0' },
     embed: { fill: '#e6dcef', stroke: '#a58bbd' },
+    rope: { fill: '#dfe7f2', stroke: '#8ba1bd' },
     composite: { fill: '#cfd8ea', stroke: '#7d90b5' },
     moe: { fill: '#f6ddd2', stroke: '#c99378' },
     router: { fill: '#e4e4e4', stroke: '#8f8f8f' },
@@ -34,6 +39,7 @@
     weight: { fill: '#f4f3f1', stroke: '#b6b2ab' },
     terminal: { fill: 'none', stroke: 'none' },
   }
+  const DORMANT = { fill: '#efefee', stroke: '#c2c0bb' }
 
   const COL = 132
   const BOXW = 108
@@ -43,11 +49,13 @@
   const rows = $derived(Math.max(...spec.nodes.map((n) => n.row)) + 1)
   /** Taller rows when any of them carries its metadata underneath. */
   const ROW = $derived(anyMetaBelow ? 98 : 74)
-  const height = $derived(rows * ROW + 52)
+  /** Row 0 sits on the bottom margin, so metadata under it needs the room. */
+  const PAD = $derived(spec.nodes.some((n) => n.row === 0 && metaBelow(n)) ? 52 : 30)
+  const height = $derived(rows * ROW + 22 + PAD)
 
   /** Grid → pixels. Row 0 is the bottom, so signal flows upward. */
   const cx = $derived((n) => width / 2 + (n.col ?? 0) * COL)
-  const cy = $derived((n) => height - 30 - (n.row ?? 0) * ROW)
+  const cy = $derived((n) => height - PAD - (n.row ?? 0) * ROW)
   const boxW = (n) => n.w ?? BOXW
 
   const byId = $derived(new Map(spec.nodes.map((n) => [n.id, n])))
@@ -61,33 +69,70 @@
     }
     return c
   })
-  const metaBelow = (n) => (rowCount.get(n.row) ?? 1) > 1 && (n.shape || n.cost)
-  const anyMetaBelow = $derived(
-    spec.nodes.some((n) => (rowCount.get(n.row) ?? 1) > 1 && (n.shape || n.cost)),
-  )
+  const metaBelow = (n) =>
+    (n.shape || n.cost) && (n.meta === 'below' || (rowCount.get(n.row) ?? 1) > 1)
+  const anyMetaBelow = $derived(spec.nodes.some(metaBelow))
+
+  /** Half the drawn width of a node, so a wire can meet its edge and stop there. */
+  const halfW = (n) => (n.kind === 'terminal' ? Math.max(13, n.label.length * 4.4) : boxW(n) / 2)
+  const topY = (n) => cy(n) - (n.kind === 'terminal' ? 11 : BOXH / 2)
+  // A terminal's shape note is drawn under its label, so an arrow arriving from
+  // below has to stop under the note rather than run through it.
+  const botY = (n) => cy(n) + (n.kind === 'terminal' ? (n.note ? 25 : 11) : BOXH / 2)
 
   /**
    * Orthogonal route from one node's top to another's bottom: straight up when
    * they share a column, otherwise up, across, and in — which is how the paper
    * draws V bypassing into the second MatMul.
+   *
+   * An edge may instead name a `lane`: a clear column to travel up. It leaves the
+   * source through the side facing that lane (or through the top, if the lane is
+   * its own column) and arrives on the side of the target rather than underneath
+   * it. That is what keeps a second arrow into the same box — a residual, or a
+   * router telling the experts which of them to run — from landing on top of the
+   * first and looking like one wire.
    */
   function route(a, b, e) {
     const x1 = cx(a)
-    const y1 = cy(a) - (a.kind === 'terminal' ? 12 : BOXH / 2)
     const x2 = cx(b)
-    const y2 = cy(b) + BOXH / 2
-    // An explicit side route: out, up past everything, and back in. Residual
-    // connections use this so they are visibly going *around* the block rather
-    // than being lost underneath the main path.
-    if (e?.via != null) {
-      const vx = width / 2 + e.via * COL
-      const outY = a.kind === 'terminal' ? y1 + 6 : cy(a)
-      return `M${x1},${outY} L${vx},${outY} L${vx},${y2} L${x2},${y2}`
+    if (e?.lane != null) {
+      // Same row: nothing to route around, just meet edge to edge.
+      if (Math.abs(cy(a) - cy(b)) < 2) {
+        const d = Math.sign(x2 - x1) || 1
+        return `M${x1 + d * halfW(a)},${cy(a)} L${x2 - d * halfW(b)},${cy(b)}`
+      }
+      const vx = width / 2 + e.lane * COL
+      const out = vx - x1
+      // `out: 'top'` forces the wire to leave through the top even when the lane
+      // is off to one side — for a value that fans out, so it visibly branches
+      // off the forward arrow instead of appearing to pass through the box.
+      const fromTop = e.out === 'top' || Math.abs(out) < 2
+      const sx = fromTop ? x1 : x1 + Math.sign(out) * halfW(a)
+      const sy = fromTop ? topY(a) : cy(a)
+      const into = x2 - vx
+      const ex = Math.abs(into) < 2 ? x2 : x2 - Math.sign(into) * halfW(b)
+      const ey = Math.abs(into) < 2 ? botY(b) : cy(b)
+      return `M${sx},${sy} L${vx},${sy} L${vx},${ey} L${ex},${ey}`
     }
+    const y1 = topY(a)
+    const y2 = botY(b)
     if (Math.abs(x1 - x2) < 2) return `M${x1},${y1} L${x2},${y2}`
     // Clear the metadata band under the target, or the wire runs through the text.
     const mid = y2 + (metaBelow(b) ? 38 : 22)
     return `M${x1},${y1} L${x1},${mid} L${x2},${mid} L${x2},${y2}`
+  }
+
+  /** Edge labels sit against the lane, on the side away from the diagram's spine. */
+  function labelAt(e, a, b) {
+    if (e.lane == null) return { x: cx(a) + 7, y: (cy(a) + cy(b)) / 2 + 4, anchor: 'start' }
+    const vx = width / 2 + e.lane * COL
+    const outward = e.lane < 0 ? -1 : 1
+    const y = (cy(a) + cy(b)) / 2 + 4
+    // Prefer the outside of the lane, where nothing else is drawn — but fall back
+    // inward rather than let a label run off the canvas.
+    const w = (e.label?.length ?? 0) * 5.4
+    if (outward < 0) return vx - 7 - w < 4 ? { x: vx + 7, y, anchor: 'start' } : { x: vx - 7, y, anchor: 'end' }
+    return vx + 7 + w > width - 4 ? { x: vx - 7, y, anchor: 'end' } : { x: vx + 7, y, anchor: 'start' }
   }
 
   let hovered = $state(null)
@@ -119,6 +164,9 @@
     <marker id="bd-arrow-res" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
       <path d="M0,1 L9,5 L0,9 z" fill="#2c7fb8" />
     </marker>
+    <marker id="bd-arrow-ctl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,1 L9,5 L0,9 z" fill="#9a7b3f" />
+    </marker>
   </defs>
 
   <text x="0" y="14" class="title">{spec.title}</text>
@@ -133,14 +181,18 @@
         d={route(a, b, e)}
         class="edge"
         class:residual={e.residual}
-        marker-end="url({e.residual ? '#bd-arrow-res' : '#bd-arrow'})"
+        class:control={e.control}
+        marker-end="url({e.residual ? '#bd-arrow-res' : e.control ? '#bd-arrow-ctl' : '#bd-arrow'})"
       />
       {#if e.label}
+        {@const p = labelAt(e, a, b)}
         <text
-          x={e.via != null ? width / 2 + e.via * COL + 7 : cx(a) + 7}
-          y={(cy(a) + cy(b)) / 2 + 4}
+          x={p.x}
+          y={p.y}
+          text-anchor={p.anchor}
           class="elabel"
-          class:res={e.residual}>{e.label}</text
+          class:res={e.residual}
+          class:ctl={e.control}>{e.label}</text
         >
       {/if}
     {/if}
@@ -166,7 +218,9 @@
         onfocus={() => (hovered = n)}
         onblur={() => (hovered = null)}
       >
-        <!-- stacked cards behind the box, for things that repeat -->
+        <!-- Stacked cards behind the box, for things that repeat. When only some
+             of the stack runs for a given token, the cards behind are drawn grey:
+             the front card is the work, the pile behind it is the memory bill. -->
         {#if n.stack}
           {#each [3, 2, 1] as d}
             <rect
@@ -175,9 +229,9 @@
               width={boxW(n)}
               height={BOXH}
               rx="5"
-              fill={KINDS[n.kind].fill}
-              stroke={KINDS[n.kind].stroke}
-              opacity={0.45 - d * 0.09}
+              fill={n.active ? DORMANT.fill : KINDS[n.kind].fill}
+              stroke={n.active ? DORMANT.stroke : KINDS[n.kind].stroke}
+              opacity={n.active ? 0.9 - d * 0.12 : 0.45 - d * 0.09}
             />
           {/each}
         {/if}
@@ -201,7 +255,14 @@
             d="M{x + boxW(n) / 2 + 20},{y - BOXH / 2 - 16} q10,0 10,10 q0,10 10,10"
             class="brace"
           />
-          <text x={x + boxW(n) / 2 + 46} y={y - BOXH / 2 + 8} class="mult">×{n.stack}</text>
+          <text x={x + boxW(n) / 2 + 46} y={y - BOXH / 2 + (n.active ? 2 : 8)} class="mult"
+            >×{n.stack}</text
+          >
+          {#if n.active}
+            <text x={x + boxW(n) / 2 + 46} y={y - BOXH / 2 + 15} class="active-note"
+              >{n.active} run</text
+            >
+          {/if}
         {/if}
 
         <!-- shapes and cost: beside the box when it stands alone in its row,
@@ -252,8 +313,33 @@
     stroke-dasharray: 5 3;
   }
 
+  /* Control signals — which experts to run, which keys to keep. They carry
+     indices and gates, not activations, so they are drawn as a separate class. */
+  .edge.control {
+    stroke: #9a7b3f;
+    stroke-width: 1.3;
+    stroke-dasharray: 2 2.5;
+  }
+
   .elabel.res {
     fill: #2c7fb8;
+  }
+
+  .elabel.ctl {
+    fill: #9a7b3f;
+  }
+
+  .elabel {
+    paint-order: stroke;
+    stroke: #fff;
+    stroke-width: 3px;
+    stroke-linejoin: round;
+  }
+
+  .active-note {
+    font-size: 9.5px;
+    fill: #c0392b;
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
   }
 
   .elabel {
